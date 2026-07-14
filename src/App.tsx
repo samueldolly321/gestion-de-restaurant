@@ -1270,7 +1270,7 @@ export default function App() {
   const unreadNotifCount = notifications.filter((n) => !n.isRead).length;
 
   const getCalendarEvents = () => {
-    const events: Array<{ type: 'reservation' | 'leave'; title: string; date: string; color: string }> = [];
+    const events: Array<{ type: 'reservation' | 'leave' | 'special' | 'delivery'; title: string; date: string; color: string }> = [];
 
     // Add reservations to calendar
     reservations.forEach((r) => {
@@ -1295,7 +1295,30 @@ export default function App() {
       }
     });
 
-    return events;
+    // Add special events (concerts, soirées, fermetures...)
+    specialEvents.forEach((e) => {
+      events.push({
+        type: 'special',
+        title: e.title,
+        date: e.date,
+        color: 'bg-indigo-50 text-indigo-800 border-indigo-200'
+      });
+    });
+
+    // Add deliveries with a planned date
+    deliveries.forEach((d) => {
+      if (d.deliveryDate) {
+        events.push({
+          type: 'delivery',
+          title: `Livraison : ${d.clientName}`,
+          date: d.deliveryDate,
+          color: 'bg-blue-50 text-blue-800 border-blue-200'
+        });
+      }
+    });
+
+    // Tri chronologique.
+    return events.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   };
 
   // ONBOARDING SCREEN (Signed Out) - Crafted in spectacular Red and Yellow brand accents!
@@ -2086,7 +2109,7 @@ export default function App() {
                         <h3 className="font-display font-extrabold text-slate-900 text-sm flex items-center gap-2">
                           <Calendar className="w-4.5 h-4.5 text-red-600" /> Calendrier de l'Établissement
                         </h3>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Planning unifié : Réservations de table & Congés du personnel</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Planning unifié : Réservations, congés, livraisons & événements</p>
                       </div>
                       <span className="text-[10px] bg-slate-100 text-slate-600 font-mono font-bold px-2 py-0.5 rounded-lg border border-slate-200">
                         {new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
@@ -2102,7 +2125,10 @@ export default function App() {
                           <div key={idx} className={`p-3.5 border rounded-2xl flex flex-col justify-between ${evt.color}`}>
                             <div>
                               <span className="text-[9px] font-bold uppercase tracking-wider block opacity-75 font-mono">
-                                {evt.type === 'reservation' ? '🍽️ Réservation' : '🌴 Congé Personnel'}
+                                {evt.type === 'reservation' && '🍽️ Réservation'}
+                                {evt.type === 'leave' && '🌴 Congé Personnel'}
+                                {evt.type === 'special' && '✨ Événement'}
+                                {evt.type === 'delivery' && '🚚 Livraison'}
                               </span>
                               <h4 className="font-bold text-xs mt-1 truncate">{evt.title}</h4>
                             </div>
