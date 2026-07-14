@@ -232,7 +232,7 @@ export default function OrdersManager({
       alert("Veuillez autoriser les fenêtres pop-up pour imprimer l'addition.");
       return;
     }
-    const resto = restaurantName || 'ChefSuite Realtime';
+    const resto = restaurantName || 'RestoPilote';
     const dateStr = new Date(order.createdAt).toLocaleString('fr-FR');
     const rows = (order.items || []).map((it) => `
       <tr>

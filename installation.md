@@ -1,8 +1,8 @@
-# 📘 Guide d'installation locale de ChefSuite
+# 📘 Guide d'installation locale de RestoPilote
 
-Ce guide t'explique **pas à pas** comment installer et lancer l'application **ChefSuite** (gestion de restaurant) sur ton ordinateur, en local. Il est écrit pour un **développeur junior** : chaque étape est détaillée, avec les commandes exactes.
+Ce guide t'explique **pas à pas** comment installer et lancer l'application **RestoPilote** (gestion de restaurant) sur ton ordinateur, en local. Il est écrit pour un **développeur junior** : chaque étape est détaillée, avec les commandes exactes.
 
-> ChefSuite = application web de gestion de restaurant : commandes & additions, carte/menu, stocks & fournisseurs, personnel & salaires, réservations, dépenses, tableau de bord financier, et analyses IA (optionnel).
+> RestoPilote = application web de gestion de restaurant : commandes & additions (TVA, sur place / à livrer), carte/menu & fiches techniques, stocks (déduction auto, historique), fournisseurs & commandes (réception → stock), livraisons, personnel (CV, salaires, congés), clients, réservations, calendrier, dépenses (charges récurrentes), rentrées d'argent, tableau de bord financier (ratios, trésorerie, meilleures ventes), et analyses IA (optionnel).
 
 ---
 
@@ -44,13 +44,19 @@ Le front **et** le back tournent ensemble sur **un seul serveur** : `http://loca
 
 ## 📥 Étape 1 — Récupérer le projet et installer les dépendances
 
-1. Place le dossier du projet où tu veux (ex. `D:\perso\projet\gestion-de-restaurant`).
-2. Ouvre un terminal **dans ce dossier**.
-3. Installe toutes les librairies (React, Express, Drizzle, etc.) :
+1. **Cloner le dépôt** depuis GitHub (ou copier le dossier du projet où tu veux) :
+   ```powershell
+   git clone https://github.com/samueldolly321/gestion-de-restaurant.git
+   cd gestion-de-restaurant
+   ```
+   *(Si tu as déjà le dossier, ouvre simplement un terminal dedans.)*
+2. Installe toutes les librairies (React, Express, Drizzle, etc.) :
    ```powershell
    npm install
    ```
    ⏳ Ça prend 1 à 3 minutes la première fois. C'est normal.
+
+> ℹ️ **Deux fichiers de config ne sont PAS dans le dépôt** (ils contiennent des secrets et sont ignorés par git) : `.env` et `firebase-applet-config.json`. Tu vas les **créer toi-même** aux étapes 3 et 4, à partir des modèles fournis `.env.example` et `firebase-applet-config.example.json`.
 
 ---
 
@@ -93,7 +99,11 @@ Retiens ces 4 infos, tu en as besoin à l'étape suivante :
 
 ## ⚙️ Étape 3 — Créer le fichier de configuration `.env`
 
-À la **racine du projet**, crée un fichier nommé **`.env`** (exactement ce nom) et colle ceci, en remplaçant par **tes** valeurs de l'étape 2 :
+À la **racine du projet**, crée un fichier nommé **`.env`** (exactement ce nom). Le plus simple : **copie le modèle** `.env.example` puis modifie-le :
+```powershell
+Copy-Item .env.example .env
+```
+Ouvre `.env` et remplace par **tes** valeurs de l'étape 2 (contenu attendu) :
 
 ```env
 # URL de l'application
@@ -169,8 +179,11 @@ Dans la **nouvelle console Firebase**, l'authentification est rangée sous **« 
    **Garde cette page ouverte**, tu vas copier ces valeurs.
 
 ### 4.4 — Coller la config dans le projet
-1. Ouvre le fichier **`firebase-applet-config.json`** à la racine du projet.
-2. Remplace tout son contenu par tes valeurs, **au format JSON** (guillemets doubles, pas de `const`) :
+1. **Crée le fichier** `firebase-applet-config.json` à la racine, en copiant le modèle :
+   ```powershell
+   Copy-Item firebase-applet-config.example.json firebase-applet-config.json
+   ```
+2. Ouvre-le et remplace les valeurs par les tiennes, **au format JSON** (guillemets doubles, pas de `const`) :
    ```json
    {
      "apiKey": "AIza........",
@@ -295,3 +308,5 @@ npm run start   # démarre le serveur de production
 ---
 
 Bonne installation ! 🍽️ En cas de blocage, relis la section **Dépannage** — 90 % des soucis viennent du `.env` ou de Firebase.
+
+> 📖 **Pour apprendre à utiliser l'application** (tous les écrans, de A à Z), ouvre le guide **`Guide-Utilisation-RestoPilote.docx`** fourni à la racine du projet.

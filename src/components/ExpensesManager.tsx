@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Expense } from '../types.ts';
-import { Search, Plus, Edit2, Trash2, X, Receipt, TrendingDown, Calendar, FileText, Image as ImageIcon } from 'lucide-react';
+import { Expense, RecurringExpense } from '../types.ts';
+import { Search, Plus, Edit2, Trash2, X, Receipt, TrendingDown, Calendar, FileText, Image as ImageIcon, Repeat } from 'lucide-react';
 
 // Catégories de dépenses diverses (loyer, charges, achats...).
 const EXPENSE_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'ingredients', label: 'Ingrédients / Matières premières' },
   { value: 'loyer', label: 'Loyer' },
   { value: 'electricite', label: 'Électricité (JIRAMA)' },
   { value: 'eau', label: 'Eau (JIRAMA)' },
   { value: 'telecom', label: 'Internet / Télécom' },
   { value: 'entretien', label: 'Entretien / Réparations' },
-  { value: 'fournitures', label: 'Fournitures / Achats divers' },
+  { value: 'fournitures', label: 'Fournitures / Consommables (non-alim.)' },
   { value: 'taxes', label: 'Taxes & Impôts' },
   { value: 'transport', label: 'Transport / Carburant' },
   { value: 'divers', label: 'Divers' },
@@ -17,16 +18,24 @@ const EXPENSE_CATEGORIES: { value: string; label: string }[] = [
 
 interface ExpensesManagerProps {
   expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
   onAddExpense: (formData: any) => Promise<void>;
   onEditExpense: (id: number, formData: any) => Promise<void>;
   onDeleteExpense: (id: number) => Promise<void>;
+  onAddRecurring: (formData: any) => Promise<void>;
+  onEditRecurring: (id: number, formData: any) => Promise<void>;
+  onDeleteRecurring: (id: number) => Promise<void>;
 }
 
 export default function ExpensesManager({
   expenses,
+  recurringExpenses,
   onAddExpense,
   onEditExpense,
   onDeleteExpense,
+  onAddRecurring,
+  onEditRecurring,
+  onDeleteRecurring,
 }: ExpensesManagerProps) {
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -42,6 +51,25 @@ export default function ExpensesManager({
   const [expenseDate, setExpenseDate] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Charges récurrentes (gestion)
+  const [isRecurringOpen, setIsRecurringOpen] = useState(false);
+  const [editingRec, setEditingRec] = useState<RecurringExpense | null>(null);
+  const [recLabel, setRecLabel] = useState('');
+  const [recCategory, setRecCategory] = useState('loyer');
+  const [recAmount, setRecAmount] = useState(0);
+  const [recDay, setRecDay] = useState(1);
+  const [recActive, setRecActive] = useState(true);
+
+  const resetRecForm = () => { setEditingRec(null); setRecLabel(''); setRecCategory('loyer'); setRecAmount(0); setRecDay(1); setRecActive(true); };
+  const editRec = (r: RecurringExpense) => { setEditingRec(r); setRecLabel(r.label); setRecCategory(r.category); setRecAmount(r.amount); setRecDay(r.dayOfMonth); setRecActive(r.active); };
+  const submitRec = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { label: recLabel, category: recCategory, amount: Number(recAmount), dayOfMonth: Number(recDay), active: recActive };
+    if (editingRec) await onEditRecurring(editingRec.id, payload);
+    else await onAddRecurring(payload);
+    resetRecForm();
+  };
 
   const formatAr = (value: number) =>
     new Intl.NumberFormat('fr-MG', {
@@ -170,12 +198,20 @@ export default function ExpensesManager({
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800"
           />
         </div>
-        <button
-          onClick={openAddModal}
-          className="px-4 py-2 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-red-600/10 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" /> Ajouter une dépense
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { resetRecForm(); setIsRecurringOpen(true); }}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-slate-200"
+          >
+            <Repeat className="w-4 h-4" /> Charges récurrentes{recurringExpenses.length > 0 ? ` (${recurringExpenses.length})` : ''}
+          </button>
+          <button
+            onClick={openAddModal}
+            className="px-4 py-2 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-red-600/10 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Ajouter une dépense
+          </button>
+        </div>
       </div>
 
       {/* Liste */}
@@ -218,7 +254,14 @@ export default function ExpensesManager({
                       )}
                     </td>
                     <td className="py-4 px-6">
-                      <p className="font-bold text-slate-800 text-xs">{exp.label}</p>
+                      <p className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        {exp.label}
+                        {exp.recurringId != null && (
+                          <span className="inline-flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold uppercase">
+                            <Repeat className="w-2.5 h-2.5" /> Récurrent
+                          </span>
+                        )}
+                      </p>
                       {exp.invoiceNumber && <p className="text-[10px] text-slate-500 font-mono mt-0.5">Facture n° {exp.invoiceNumber}</p>}
                       {exp.origin && <p className="text-[10px] text-slate-400 mt-0.5">{exp.origin}</p>}
                       {exp.notes && <p className="text-[10px] text-slate-400 mt-0.5 italic">{exp.notes}</p>}
@@ -420,6 +463,90 @@ export default function ExpensesManager({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modale : gestion des charges récurrentes */}
+      {isRecurringOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 relative text-left max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setIsRecurringOpen(false)} className="sticky top-0 float-right -mr-1 p-1.5 bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer z-10">
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="font-display font-black text-slate-800 text-base mb-1 flex items-center gap-2">
+              <Repeat className="w-5 h-5 text-indigo-600" /> Charges récurrentes mensuelles
+            </h3>
+            <p className="text-[11px] text-slate-400 mb-4">Loyer, internet, assurances… générées automatiquement en dépense chaque mois.</p>
+
+            {/* Formulaire ajout / édition */}
+            <form onSubmit={submitRec} className="bg-slate-50/60 border border-slate-100 rounded-2xl p-3 space-y-3 mb-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Libellé *</label>
+                  <input type="text" required value={recLabel} onChange={(e) => setRecLabel(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none" placeholder="Ex. Loyer mensuel" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Catégorie</label>
+                  <select value={recCategory} onChange={(e) => setRecCategory(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none cursor-pointer">
+                    {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 items-end">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Montant (Ar) *</label>
+                  <input type="number" required min="0" value={recAmount} onChange={(e) => setRecAmount(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none font-mono" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jour du mois</label>
+                  <input type="number" min="1" max="28" value={recDay} onChange={(e) => setRecDay(Number(e.target.value) || 1)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none font-mono" />
+                </div>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none pb-1.5">
+                  <input type="checkbox" checked={recActive} onChange={(e) => setRecActive(e.target.checked)} className="w-4 h-4 rounded text-red-600 focus:ring-red-500 border-slate-300" />
+                  Active
+                </label>
+              </div>
+              <div className="flex justify-end gap-2">
+                {editingRec && (
+                  <button type="button" onClick={resetRecForm} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 font-semibold rounded-lg text-xs cursor-pointer">Annuler l'édition</button>
+                )}
+                <button type="submit" className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs cursor-pointer">
+                  {editingRec ? 'Enregistrer' : '+ Ajouter la charge'}
+                </button>
+              </div>
+            </form>
+
+            {/* Liste des charges récurrentes */}
+            {recurringExpenses.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">Aucune charge récurrente. Ajoutez-en une ci-dessus.</p>
+            ) : (
+              <div className="space-y-2">
+                {recurringExpenses.map((r) => (
+                  <div key={r.id} className={`flex items-center justify-between gap-3 border rounded-xl px-3 py-2 ${r.active ? 'border-slate-100' : 'border-slate-100 opacity-50'}`}>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        {r.label}
+                        {!r.active && <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold uppercase">En pause</span>}
+                      </p>
+                      <p className="text-[10px] text-slate-400">{getCategoryLabel(r.category)} · le {r.dayOfMonth} de chaque mois</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-mono font-black text-xs text-rose-600">{formatAr(r.amount)}</span>
+                      <button onClick={() => editRec(r)} className="p-1.5 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg cursor-pointer" title="Modifier"><Edit2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => { if (confirm(`Supprimer la charge récurrente « ${r.label} » ?`)) onDeleteRecurring(r.id); }} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400 mt-4 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+              💡 Chaque charge active devient automatiquement une dépense au début de chaque mois (badge « Récurrent »). Modifier/supprimer une charge n'affecte pas les dépenses déjà générées.
+            </p>
           </div>
         </div>
       )}

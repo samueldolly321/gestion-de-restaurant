@@ -33,6 +33,7 @@ import {
   Settings,
   Truck,
   Receipt,
+  TrendingUp,
   Menu,
   X,
   Phone,
@@ -54,13 +55,14 @@ import FinanceManager from './components/FinanceManager.tsx';
 import InventoryManager from './components/InventoryManager.tsx';
 import SettingsManager from './components/SettingsManager.tsx';
 import ExpensesManager from './components/ExpensesManager.tsx';
+import IncomeManager from './components/IncomeManager.tsx';
 import DeliveriesManager from './components/DeliveriesManager.tsx';
 import CalendarManager from './components/CalendarManager.tsx';
 import AIManager from './components/AIManager.tsx';
 
-import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, Expense, Delivery } from './types.ts';
+import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent } from './types.ts';
 
-type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia';
+type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia';
 
 export default function App() {
   // Authentication states
@@ -92,7 +94,12 @@ export default function App() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -149,7 +156,12 @@ export default function App() {
         setReservations([]);
         setStocks([]);
         setSuppliers([]);
+        setSupplierOrders([]);
+        setStockMovements([]);
         setExpenses([]);
+        setRecurringExpenses([]);
+        setIncomes([]);
+        setSpecialEvents([]);
         setDeliveries([]);
         setNotifications([]);
         setIsAuthLoading(false);
@@ -173,7 +185,7 @@ export default function App() {
   // Titre de l'onglet du navigateur = nom du restaurant (identité) une fois connecté.
   useEffect(() => {
     const name = dbUser?.restaurantName?.trim();
-    document.title = name ? `${name} — ChefSuite` : 'ChefSuite — Gestion de restaurant';
+    document.title = name ? `${name} — RestoPilote` : 'RestoPilote — Gestion de restaurant';
   }, [dbUser]);
 
   // 2. Synchronize user with Cloud SQL backend
@@ -298,6 +310,10 @@ export default function App() {
     socket.on('stock_deleted', (data: { id: number }) => {
       setStocks((prev) => prev.filter((s) => s.id !== data.id));
     });
+    // Historique d'approvisionnement en temps réel
+    socket.on('stock_movement_created', (mv: StockMovement) => {
+      setStockMovements((prev) => [mv, ...prev.filter((m) => m.id !== mv.id)]);
+    });
 
     // Handle real-time supplier updates
     socket.on('supplier_created', (newSup: Supplier) => {
@@ -310,6 +326,17 @@ export default function App() {
       setSuppliers((prev) => prev.filter((s) => s.id !== data.id));
     });
 
+    // Handle real-time supplier order updates
+    socket.on('supplier_order_created', (newO: SupplierOrder) => {
+      setSupplierOrders((prev) => [newO, ...prev.filter((o) => o.id !== newO.id)]);
+    });
+    socket.on('supplier_order_updated', (updO: SupplierOrder) => {
+      setSupplierOrders((prev) => prev.map((o) => (o.id === updO.id ? updO : o)));
+    });
+    socket.on('supplier_order_deleted', (data: { id: number }) => {
+      setSupplierOrders((prev) => prev.filter((o) => o.id !== data.id));
+    });
+
     // Handle real-time expense updates
     socket.on('expense_created', (newE: Expense) => {
       setExpenses((prev) => [newE, ...prev.filter((e) => e.id !== newE.id)]);
@@ -319,6 +346,36 @@ export default function App() {
     });
     socket.on('expense_deleted', (data: { id: number }) => {
       setExpenses((prev) => prev.filter((e) => e.id !== data.id));
+    });
+
+    // Handle real-time recurring expense updates (charges récurrentes)
+    socket.on('recurring_expense_created', (newR: RecurringExpense) => {
+      setRecurringExpenses((prev) => [newR, ...prev.filter((r) => r.id !== newR.id)]);
+    });
+    socket.on('recurring_expense_updated', (updR: RecurringExpense) => {
+      setRecurringExpenses((prev) => prev.map((r) => (r.id === updR.id ? updR : r)));
+    });
+    socket.on('recurring_expense_deleted', (data: { id: number }) => {
+      setRecurringExpenses((prev) => prev.filter((r) => r.id !== data.id));
+    });
+
+    // Handle real-time income updates (rentrées d'argent)
+    socket.on('income_created', (newI: Income) => {
+      setIncomes((prev) => [newI, ...prev.filter((i) => i.id !== newI.id)]);
+    });
+    socket.on('income_updated', (updI: Income) => {
+      setIncomes((prev) => prev.map((i) => (i.id === updI.id ? updI : i)));
+    });
+    socket.on('income_deleted', (data: { id: number }) => {
+      setIncomes((prev) => prev.filter((i) => i.id !== data.id));
+    });
+
+    // Handle real-time special event updates (calendrier)
+    socket.on('special_event_created', (newE: SpecialEvent) => {
+      setSpecialEvents((prev) => [newE, ...prev.filter((e) => e.id !== newE.id)]);
+    });
+    socket.on('special_event_deleted', (data: { id: number }) => {
+      setSpecialEvents((prev) => prev.filter((e) => e.id !== data.id));
     });
 
     // Handle real-time delivery updates
@@ -341,7 +398,13 @@ export default function App() {
   const fetchWorkspaceData = async (jwtToken: string, userId: number) => {
     try {
       setIsDataLoading(true);
-      const [clientsRes, staffRes, menuRes, ordersRes, notifsRes, resvRes, stocksRes, suppliersRes, expensesRes, deliveriesRes] = await Promise.all([
+      // Matérialise les charges récurrentes du mois en cours AVANT de charger les dépenses.
+      await fetch('/api/recurring-expenses/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` },
+        body: JSON.stringify({ dbUserId: userId })
+      }).catch(() => {});
+      const [clientsRes, staffRes, menuRes, ordersRes, notifsRes, resvRes, stocksRes, suppliersRes, expensesRes, deliveriesRes, movementsRes, supplierOrdersRes, incomesRes, recurringRes, specialEventsRes] = await Promise.all([
         fetch(`/api/clients?dbUserId=${userId}`, {
           headers: { 'Authorization': `Bearer ${jwtToken}` }
         }),
@@ -371,6 +434,21 @@ export default function App() {
         }),
         fetch(`/api/deliveries?dbUserId=${userId}`, {
           headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/stock-movements?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/supplier-orders?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/incomes?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/recurring-expenses?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/special-events?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
         })
       ]);
 
@@ -384,6 +462,11 @@ export default function App() {
       if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
       if (expensesRes.ok) setExpenses(await expensesRes.json());
       if (deliveriesRes.ok) setDeliveries(await deliveriesRes.json());
+      if (movementsRes.ok) setStockMovements(await movementsRes.json());
+      if (supplierOrdersRes.ok) setSupplierOrders(await supplierOrdersRes.json());
+      if (incomesRes.ok) setIncomes(await incomesRes.json());
+      if (recurringRes.ok) setRecurringExpenses(await recurringRes.json());
+      if (specialEventsRes.ok) setSpecialEvents(await specialEventsRes.json());
     } catch (err) {
       console.error('Failed to load workspace data:', err);
     } finally {
@@ -831,6 +914,48 @@ export default function App() {
     }
   };
 
+  // --- SUPPLIER ORDERS MUTATORS (commandes fournisseur) ---
+  const handleAddSupplierOrder = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/supplier-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'enregistrer la commande fournisseur.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleEditSupplierOrder = async (id: number, formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/supplier-orders/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible de modifier la commande fournisseur.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteSupplierOrder = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/supplier-orders/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer la commande fournisseur.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
   // --- EXPENSES MUTATORS (Dépenses diverses) ---
   const handleAddExpense = async (formData: any) => {
     if (!token || !dbUser) return;
@@ -874,6 +999,118 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Impossible de supprimer la dépense.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  // --- RECURRING EXPENSES MUTATORS (charges récurrentes) ---
+  const handleAddRecurring = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/recurring-expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'enregistrer la charge récurrente.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleEditRecurring = async (id: number, formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/recurring-expenses/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible de modifier la charge récurrente.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteRecurring = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/recurring-expenses/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer la charge récurrente.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  // --- SPECIAL EVENTS MUTATORS (calendrier) ---
+  const handleAddSpecialEvent = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/special-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'ajouter l\'événement.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteSpecialEvent = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/special-events/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer l\'événement.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  // --- INCOMES MUTATORS (Rentrées d'argent) ---
+  const handleAddIncome = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/incomes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'enregistrer la rentrée.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleEditIncome = async (id: number, formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/incomes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible de modifier la rentrée.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteIncome = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/incomes/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer la rentrée.');
     } catch (err: any) {
       setErrorMsg(err.message);
     }
@@ -1077,7 +1314,7 @@ export default function App() {
               <Utensils className="w-5 h-5 text-white" />
             </div>
             <span className="font-display font-bold text-lg tracking-tight text-slate-900">
-              ChefSuite Realtime
+              RestoPilote
             </span>
           </div>
 
@@ -1108,7 +1345,7 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="font-display font-black text-lg text-slate-900">Support &amp; Contact</h2>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">ChefSuite Assistance</p>
+                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">RestoPilote Assistance</p>
                   </div>
                 </div>
                 <button
@@ -1173,7 +1410,7 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="font-display font-black text-lg text-slate-900">Charte de Confidentialité</h2>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Sécurité des Données ChefSuite</p>
+                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Sécurité des Données RestoPilote</p>
                   </div>
                 </div>
                 <button
@@ -1203,14 +1440,14 @@ export default function App() {
                 <div className="space-y-1.5">
                   <h3 className="font-bold text-slate-800">3. Sécurité Locale Totale</h3>
                   <p>
-                    Lorsque l'application ChefSuite est déployée en local sur votre poste de travail à l'aide de PostgreSQL, vous gardez le contrôle physique et réseau absolu sur votre base de données. Aucune donnée n'est envoyée vers des serveurs distants en dehors de l'authentification sécurisée gérée via Firebase Auth.
+                    Lorsque l'application RestoPilote est déployée en local sur votre poste de travail à l'aide de PostgreSQL, vous gardez le contrôle physique et réseau absolu sur votre base de données. Aucune donnée n'est envoyée vers des serveurs distants en dehors de l'authentification sécurisée gérée via Firebase Auth.
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <h3 className="font-bold text-slate-800">4. Traitement des Analyses par Intelligence Artificielle</h3>
                   <p>
-                    Les fonctionnalités IA de ChefSuite s'exécutent au travers de passerelles de sécurité qui anonymisent les noms et informations nominatives de votre équipe avant de solliciter les modèles de langage de pointe de l'IA. Cela garantit un traitement ultra-sécurisé sans fuite d'informations confidentielles.
+                    Les fonctionnalités IA de RestoPilote s'exécutent au travers de passerelles de sécurité qui anonymisent les noms et informations nominatives de votre équipe avant de solliciter les modèles de langage de pointe de l'IA. Cela garantit un traitement ultra-sécurisé sans fuite d'informations confidentielles.
                   </p>
                 </div>
               </div>
@@ -1229,7 +1466,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-10 items-center w-full">
               <div className="md:col-span-7 text-left space-y-6">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 border border-red-100 text-xs font-semibold text-red-700">
-                  <Sparkles className="w-3.5 h-3.5" /> Pilotage Restaurant Rouge & Jaune
+                  <Sparkles className="w-3.5 h-3.5" /> Gestion de Restaurant en ligne
                 </div>
 
                 <h1 className="font-display text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 leading-tight">
@@ -1331,7 +1568,7 @@ export default function App() {
                 <div className="space-y-6 py-2 text-center">
                   <div className="space-y-1">
                     <h3 className="font-display font-bold text-lg text-slate-900">Portail Restaurant</h3>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">Contrôle d'accès ChefSuite</p>
+                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">Contrôle d'accès RestoPilote</p>
                   </div>
 
                   {/* Tabs */}
@@ -1505,7 +1742,7 @@ export default function App() {
         <footer className="py-6 border-t border-slate-100 px-6 z-10 bg-white">
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-[11px] text-slate-400 font-semibold">
-              © 2026 ChefSuite Realtime • Madagascar.
+              © 2026 RestoPilote • Madagascar.
             </p>
             <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
               <button
@@ -1570,7 +1807,7 @@ export default function App() {
               )}
               <div className="text-left">
                 <span className="font-display font-extrabold text-sm tracking-tight text-slate-950 block leading-tight">
-                  {dbUser?.restaurantName || 'ChefSuite Realtime'}
+                  {dbUser?.restaurantName || 'RestoPilote'}
                 </span>
                 <span className="text-[9px] font-mono font-extrabold text-red-600 block flex items-center gap-1 mt-1">
                   <span className="h-1.5 w-1.5 bg-yellow-400 rounded-full animate-ping" />
@@ -1601,6 +1838,7 @@ export default function App() {
               { id: 'calendar', label: 'Calendrier Live', icon: Calendar },
               { id: 'stocks', label: 'Stocks & Fournisseurs', icon: Package },
               { id: 'finance', label: 'Argent (Finances)', icon: Landmark, roleRestriction: 'super_admin' },
+              { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp },
               { id: 'expenses', label: 'Dépenses diverses', icon: Receipt },
               { id: 'ia', label: 'Analyses IA & Mérite', icon: Sparkles },
               { id: 'settings', label: 'Paramètres', icon: Settings },
@@ -1692,6 +1930,7 @@ export default function App() {
                   {activeTab === 'personnel' && 'Gestion d\'Équipe'}
                   {activeTab === 'stocks' && 'Inventaire & Stocks'}
                   {activeTab === 'finance' && 'Rapports Financiers'}
+                  {activeTab === 'incomes' && 'Rentrées d\'argent'}
                   {activeTab === 'expenses' && 'Dépenses diverses'}
                   {activeTab === 'menu' && 'Carte du Chef'}
                   {activeTab === 'settings' && 'Configuration de l\'Établissement'}
@@ -1706,6 +1945,7 @@ export default function App() {
                   {activeTab === 'personnel' && 'Congés, taux horaires et fiches de paie'}
                   {activeTab === 'stocks' && 'Alerte stock bas, commandes fournisseurs'}
                   {activeTab === 'finance' && 'Suivi de chiffre d\'affaires et de dépenses'}
+                  {activeTab === 'incomes' && 'Recettes : additions payées (auto) + autres rentrées'}
                   {activeTab === 'expenses' && 'Loyer, charges et factures (photo incluse)'}
                   {activeTab === 'menu' && 'Plats, boissons et gestion des disponibilités'}
                   {activeTab === 'settings' && 'Paramètres généraux du restaurant'}
@@ -1834,8 +2074,8 @@ export default function App() {
                     personnel={personnel}
                     menuItems={menuItems}
                     orders={orders}
-                    suppliers={suppliers}
                     expenses={expenses}
+                    incomes={incomes}
                     userRole={dbUser?.role || 'super_admin'}
                   />
 
@@ -1956,6 +2196,9 @@ export default function App() {
                   reservations={reservations}
                   personnel={personnel}
                   deliveries={deliveries}
+                  specialEvents={specialEvents}
+                  onAddSpecialEvent={handleAddSpecialEvent}
+                  onDeleteSpecialEvent={handleDeleteSpecialEvent}
                   dbUserId={dataOwnerId || 1}
                 />
               </motion.div>
@@ -1990,9 +2233,15 @@ export default function App() {
                 <InventoryManager
                   stocks={stocks}
                   suppliers={suppliers}
+                  menuItems={menuItems}
+                  stockMovements={stockMovements}
+                  supplierOrders={supplierOrders}
                   onAddStock={handleAddStock}
                   onEditStock={handleEditStock}
                   onDeleteStock={handleDeleteStock}
+                  onAddSupplierOrder={handleAddSupplierOrder}
+                  onEditSupplierOrder={handleEditSupplierOrder}
+                  onDeleteSupplierOrder={handleDeleteSupplierOrder}
                   onAddSupplier={handleAddSupplier}
                   onEditSupplier={handleEditSupplier}
                   onDeleteSupplier={handleDeleteSupplier}
@@ -2026,9 +2275,31 @@ export default function App() {
               >
                 <ExpensesManager
                   expenses={expenses}
+                  recurringExpenses={recurringExpenses}
                   onAddExpense={handleAddExpense}
                   onEditExpense={handleEditExpense}
                   onDeleteExpense={handleDeleteExpense}
+                  onAddRecurring={handleAddRecurring}
+                  onEditRecurring={handleEditRecurring}
+                  onDeleteRecurring={handleDeleteRecurring}
+                />
+              </motion.div>
+            )}
+
+            {activeTab === 'incomes' && (
+              <motion.div
+                key="incomes-view"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+              >
+                <IncomeManager
+                  incomes={incomes}
+                  orders={orders}
+                  onAddIncome={handleAddIncome}
+                  onEditIncome={handleEditIncome}
+                  onDeleteIncome={handleDeleteIncome}
                 />
               </motion.div>
             )}
@@ -2062,6 +2333,7 @@ export default function App() {
               >
                 <MenuManager
                   menuItems={menuItems}
+                  stocks={stocks}
                   onAddMenuItem={handleAddMenuItem}
                   onEditMenuItem={handleEditMenuItem}
                   onDeleteMenuItem={handleDeleteMenuItem}

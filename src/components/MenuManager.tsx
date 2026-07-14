@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { MenuItem, Ingredient } from '../types.ts';
-import { Search, Plus, Utensils, ToggleLeft, ToggleRight, Trash2, Edit2, X, Image as ImageIcon, Camera, Scale } from 'lucide-react';
+import { MenuItem, Ingredient, Stock } from '../types.ts';
+import { Search, Plus, Utensils, ToggleLeft, ToggleRight, Trash2, Edit2, X, Image as ImageIcon, Scale, Link2 } from 'lucide-react';
 
 // Catégories prédéfinies de la carte. La catégorie est stockée en texte libre :
 // on peut donc aussi en créer des personnalisées via l'option "Autre".
@@ -23,6 +23,7 @@ const CUSTOM_CATEGORY = '__custom__';
 
 interface MenuManagerProps {
   menuItems: MenuItem[];
+  stocks: Stock[];
   onAddMenuItem: (formData: any) => Promise<void>;
   onEditMenuItem: (id: number, formData: any) => Promise<void>;
   onDeleteMenuItem: (id: number) => Promise<void>;
@@ -30,6 +31,7 @@ interface MenuManagerProps {
 
 export default function MenuManager({
   menuItems,
+  stocks,
   onAddMenuItem,
   onEditMenuItem,
   onDeleteMenuItem
@@ -49,11 +51,38 @@ export default function MenuManager({
   const [imageUrl, setImageUrl] = useState('');
   const [ingredients, setIngredients] = useState<Ingredient[]>([]); // fiche technique du plat
 
-  // Helpers fiche technique (ingrédients : grammage + coût)
-  const addIngredientRow = () => setIngredients((prev) => [...prev, { name: '', grammage: 0, unit: 'g', cost: 0 }]);
+  // Helpers fiche technique (ingrédients : grammage + coût, + lien vers le stock)
+  const addIngredientRow = () => setIngredients((prev) => [...prev, { name: '', grammage: 0, unit: 'g', cost: 0, stockId: null }]);
   const updateIngredient = (idx: number, field: keyof Ingredient, value: string | number) =>
-    setIngredients((prev) => prev.map((ing, i) => (i === idx ? { ...ing, [field]: value } : ing)));
+    setIngredients((prev) => prev.map((ing, i) => {
+      if (i !== idx) return ing;
+      const next = { ...ing, [field]: value } as Ingredient;
+      // Si l'ingrédient est lié au stock, le coût suit le grammage × prix unitaire du stock.
+      if (field === 'grammage' && next.stockId != null) {
+        const st = stocks.find((s) => s.id === next.stockId);
+        if (st) next.cost = (Number(value) || 0) * (st.unitCost || 0);
+      }
+      return next;
+    }));
   const removeIngredient = (idx: number) => setIngredients((prev) => prev.filter((_, i) => i !== idx));
+
+  // Lie (ou délie) un ingrédient à un article de stock : reprend son nom/unité et calcule le coût.
+  const linkIngredientToStock = (idx: number, stockIdStr: string) => {
+    setIngredients((prev) => prev.map((ing, i) => {
+      if (i !== idx) return ing;
+      if (!stockIdStr) return { ...ing, stockId: null }; // « Libre » : redevient éditable manuellement
+      const st = stocks.find((s) => s.id === Number(stockIdStr));
+      if (!st) return ing;
+      return {
+        ...ing,
+        stockId: st.id,
+        name: st.itemName,
+        unit: st.unit,
+        cost: (Number(ing.grammage) || 0) * (st.unitCost || 0),
+      };
+    }));
+  };
+
   const totalIngredientCost = ingredients.reduce((sum, i) => sum + (Number(i.cost) || 0), 0);
 
   // Format Ariary helper
@@ -135,7 +164,7 @@ export default function MenuManager({
       // Fiche technique : on ne garde que les ingrédients nommés.
       ingredients: ingredients
         .filter((i) => i.name.trim())
-        .map((i) => ({ name: i.name.trim(), grammage: Number(i.grammage) || 0, unit: i.unit, cost: Number(i.cost) || 0 })),
+        .map((i) => ({ name: i.name.trim(), grammage: Number(i.grammage) || 0, unit: i.unit, cost: Number(i.cost) || 0, stockId: i.stockId ?? null })),
     };
 
     if (editingItem) {
@@ -250,7 +279,7 @@ export default function MenuManager({
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 gap-1.5">
                     <Utensils className="w-10 h-10 stroke-[1.25]" />
-                    <span className="text-[10px] uppercase font-bold tracking-wider font-mono">ChefSuite Cuisine</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider font-mono">RestoPilote Cuisine</span>
                   </div>
                 )}
 
@@ -470,57 +499,81 @@ export default function MenuManager({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {/* En-têtes */}
-                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                      <span className="flex-1">Ingrédient</span>
-                      <span className="w-14 text-center">Qté</span>
-                      <span className="w-14 text-center">Unité</span>
-                      <span className="w-20 text-center">Coût (Ar)</span>
-                      <span className="w-5" />
-                    </div>
-                    {ingredients.map((ing, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5">
-                        <input
-                          value={ing.name}
-                          onChange={(e) => updateIngredient(idx, 'name', e.target.value)}
-                          placeholder="Ex. Boeuf"
-                          className="flex-1 min-w-0 px-2.5 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={ing.grammage}
-                          onChange={(e) => updateIngredient(idx, 'grammage', Number(e.target.value) || 0)}
-                          className="w-14 px-2 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono"
-                        />
-                        <select
-                          value={ing.unit}
-                          onChange={(e) => updateIngredient(idx, 'unit', e.target.value)}
-                          className="w-14 px-1 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 cursor-pointer"
-                        >
-                          <option value="g">g</option>
-                          <option value="kg">kg</option>
-                          <option value="ml">ml</option>
-                          <option value="l">l</option>
-                          <option value="piece">pce</option>
-                        </select>
-                        <input
-                          type="number"
-                          min="0"
-                          value={ing.cost}
-                          onChange={(e) => updateIngredient(idx, 'cost', Number(e.target.value) || 0)}
-                          className="w-20 px-2 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeIngredient(idx)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                          title="Retirer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                    {ingredients.map((ing, idx) => {
+                      const isLinked = ing.stockId != null;
+                      return (
+                        <div key={idx} className="border border-slate-100 rounded-xl p-2 bg-white space-y-1.5">
+                          {/* Lien vers un article de stock (déduction auto à la vente) */}
+                          <div className="flex items-center gap-1.5">
+                            <Link2 className={`w-3.5 h-3.5 shrink-0 ${isLinked ? 'text-emerald-500' : 'text-slate-300'}`} />
+                            <select
+                              value={isLinked ? String(ing.stockId) : ''}
+                              onChange={(e) => linkIngredientToStock(idx, e.target.value)}
+                              className="flex-1 min-w-0 px-2 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-[11px] focus:ring-1 focus:ring-red-500 outline-none text-slate-800 cursor-pointer"
+                            >
+                              <option value="">— Ingrédient libre (non lié au stock) —</option>
+                              {stocks.map((s) => (
+                                <option key={s.id} value={s.id}>{s.itemName} ({s.unit})</option>
+                              ))}
+                            </select>
+                            {isLinked && (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded shrink-0">
+                                déduit du stock
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Nom / Quantité / Unité / Coût (auto si lié) */}
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              value={ing.name}
+                              onChange={(e) => updateIngredient(idx, 'name', e.target.value)}
+                              placeholder="Ex. Boeuf"
+                              disabled={isLinked}
+                              className="flex-1 min-w-0 px-2.5 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={ing.grammage}
+                              onChange={(e) => updateIngredient(idx, 'grammage', Number(e.target.value) || 0)}
+                              title="Quantité consommée par portion"
+                              className="w-16 px-2 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono"
+                            />
+                            <select
+                              value={ing.unit}
+                              onChange={(e) => updateIngredient(idx, 'unit', e.target.value)}
+                              disabled={isLinked}
+                              className="w-14 px-1 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 cursor-pointer disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                            >
+                              <option value="g">g</option>
+                              <option value="kg">kg</option>
+                              <option value="ml">ml</option>
+                              <option value="l">l</option>
+                              <option value="piece">pce</option>
+                            </select>
+                            <input
+                              type="number"
+                              min="0"
+                              value={ing.cost}
+                              onChange={(e) => updateIngredient(idx, 'cost', Number(e.target.value) || 0)}
+                              disabled={isLinked}
+                              title={isLinked ? 'Coût calculé automatiquement depuis le prix du stock' : 'Coût de cet ingrédient'}
+                              className="w-20 px-2 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono disabled:bg-slate-100 disabled:text-slate-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeIngredient(idx)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                              title="Retirer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

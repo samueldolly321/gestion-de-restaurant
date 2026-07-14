@@ -39,6 +39,7 @@ export interface Personnel {
   leaveEnd: string | null;   // Date fin congé
   hireDate: string | null;   // Date d'embauche
   avatarUrl?: string | null; // Photo de profil
+  cvUrl?: string | null; // CV (PDF ou image)
   createdAt: string;
 }
 
@@ -47,6 +48,7 @@ export interface Ingredient {
   grammage: number; // quantité (ex. 200 pour 200 g)
   unit: string; // 'g', 'kg', 'ml', 'l', 'pièce'
   cost: number; // coût de cet ingrédient (Ar)
+  stockId?: number | null; // article de stock lié (déduction auto à la vente)
 }
 
 export interface MenuItem {
@@ -79,6 +81,7 @@ export interface Order {
   status: 'en_attente' | 'en_preparation' | 'servi' | 'paye' | string;
   orderType: 'sur_place' | 'a_livrer' | string; // sur place ou à livrer
   taxRate: number; // taux de TVA en % (prix menu = TTC)
+  stockDeducted?: boolean; // stock des ingrédients déjà décrémenté (au paiement)
   totalAmount: number;
   paymentMethod: 'carte' | 'especes' | 'mobile' | string;
   serverName?: string | null; // serveur/serveuse ayant pris la commande
@@ -109,6 +112,28 @@ export interface Supplier {
   paymentStatus: 'paye' | 'en_attente' | 'non_paye' | string;
   contractDate: string | null;
   amountDue: number;
+  invoiceNumber: string | null; // numéro de facture fournisseur
+  invoiceImageUrl: string | null; // photo de la facture
+  createdAt: string;
+}
+
+export interface SupplierOrder {
+  id: number;
+  userId: number;
+  supplierId: number;
+  label: string; // description de la commande
+  quantity: number; // quantité commandée
+  unitPrice: number; // prix unitaire (Ar)
+  amount: number; // total = quantité × prix unitaire
+  orderDate: string | null; // YYYY-MM-DD
+  paymentStatus: 'paye' | 'en_attente' | 'non_paye' | string;
+  invoiceNumber: string | null;
+  invoiceImageUrl: string | null;
+  note: string | null;
+  expenseId: number | null; // dépense liée (créée auto au paiement)
+  stockId: number | null; // article de stock alimenté à la réception
+  received: boolean; // marchandise reçue ?
+  stockApplied?: boolean; // quantité déjà ajoutée au stock (garde-fou)
   createdAt: string;
 }
 
@@ -116,8 +141,10 @@ export interface Stock {
   id: number;
   userId: number;
   itemName: string;
-  quantity: number;
+  quantity: number; // quantité restante
+  initialQuantity: number; // quantité initiale (achat de référence)
   unit: string;
+  unitCost: number; // coût d'achat par unité (Ar)
   minStock: number;
   supplierId: number | null;
   invoiceImageUrl?: string | null; // Facture jointe
@@ -135,6 +162,18 @@ export interface Expense {
   imageUrl: string | null; // photo de la facture (base64 ou URL)
   expenseDate: string | null; // YYYY-MM-DD
   notes: string | null;
+  recurringId?: number | null; // généré depuis une charge récurrente
+  createdAt: string;
+}
+
+export interface RecurringExpense {
+  id: number;
+  userId: number;
+  label: string;
+  category: string;
+  amount: number;
+  dayOfMonth: number; // 1-28
+  active: boolean;
   createdAt: string;
 }
 
@@ -149,6 +188,42 @@ export interface Delivery {
   orderId: number | null; // numéro de la commande à livrer
   driverName: string | null; // nom du livreur
   status: 'en_preparation' | 'en_route' | 'livree' | 'annulee' | string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface StockMovement {
+  id: number;
+  userId: number;
+  stockId: number;
+  itemName: string;
+  quantity: number; // quantité approvisionnée
+  unit: string;
+  note: string | null;
+  createdAt: string; // date + heure
+}
+
+export interface Income {
+  id: number;
+  userId: number;
+  label: string;
+  category: 'vente' | 'evenement' | 'subvention' | 'remboursement' | 'pourboire' | 'autre' | string;
+  amount: number;
+  source: string | null; // origine
+  paymentMethod: 'especes' | 'carte_visa' | 'mvola' | 'orange_money' | 'airtel_money' | 'virement' | 'autre' | string;
+  incomeDate: string | null; // YYYY-MM-DD
+  imageUrl: string | null; // justificatif
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SpecialEvent {
+  id: number;
+  userId: number;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time: string | null;
+  category: 'concert' | 'theme' | 'vip' | 'fermeture' | 'autre' | string;
   notes: string | null;
   createdAt: string;
 }

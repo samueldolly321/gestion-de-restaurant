@@ -1,5 +1,5 @@
 import { db } from './index.ts';
-import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, stocks, expenses, deliveries } from './schema.ts';
+import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents } from './schema.ts';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 
 // Helper to sanitize database errors and log them securely
@@ -194,7 +194,8 @@ export async function createPersonnel(
   leaveStart?: string | null,
   leaveEnd?: string | null,
   hireDate?: string | null,
-  avatarUrl?: string | null
+  avatarUrl?: string | null,
+  cvUrl?: string | null
 ) {
   try {
     const result = await db.insert(personnel)
@@ -211,6 +212,7 @@ export async function createPersonnel(
         leaveEnd: leaveEnd || null,
         hireDate: hireDate || null,
         avatarUrl: avatarUrl || null,
+        cvUrl: cvUrl || null,
       })
       .returning();
     return result[0];
@@ -234,6 +236,7 @@ export async function updatePersonnel(
     leaveEnd?: string | null;
     hireDate?: string | null;
     avatarUrl?: string | null;
+    cvUrl?: string | null;
   }
 ) {
   try {
@@ -582,7 +585,9 @@ export async function createSupplier(
   email?: string | null,
   paymentStatus = 'en_attente',
   contractDate?: string | null,
-  amountDue = 0.0
+  amountDue = 0.0,
+  invoiceNumber?: string | null,
+  invoiceImageUrl?: string | null
 ) {
   try {
     const result = await db.insert(suppliers)
@@ -595,6 +600,8 @@ export async function createSupplier(
         paymentStatus,
         contractDate,
         amountDue,
+        invoiceNumber: invoiceNumber || null,
+        invoiceImageUrl: invoiceImageUrl || null,
       })
       .returning();
     return result[0];
@@ -614,6 +621,8 @@ export async function updateSupplier(
     paymentStatus?: string;
     contractDate?: string | null;
     amountDue?: number;
+    invoiceNumber?: string | null;
+    invoiceImageUrl?: string | null;
   }
 ) {
   try {
@@ -638,6 +647,107 @@ export async function deleteSupplier(supplierId: number, dbUserId: number) {
   }
 }
 
+// --- SUPPLIER ORDERS CRUD (commandes passées aux fournisseurs) ---
+
+export async function getSupplierOrders(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(supplierOrders)
+      .where(eq(supplierOrders.userId, dbUserId))
+      .orderBy(desc(supplierOrders.orderDate), desc(supplierOrders.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch supplier orders", error);
+  }
+}
+
+export async function getSupplierOrderById(orderId: number, dbUserId: number) {
+  try {
+    const rows = await db.select().from(supplierOrders)
+      .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)));
+    return rows[0];
+  } catch (error) {
+    handleDbError("Failed to fetch supplier order", error);
+  }
+}
+
+export async function createSupplierOrder(
+  dbUserId: number,
+  supplierId: number,
+  label: string,
+  quantity = 1.0,
+  unitPrice = 0.0,
+  orderDate: string | null = null,
+  paymentStatus = 'en_attente',
+  invoiceNumber: string | null = null,
+  invoiceImageUrl: string | null = null,
+  note: string | null = null,
+  stockId: number | null = null,
+  received = false
+) {
+  try {
+    const amount = quantity * unitPrice; // le montant total est toujours recalculé
+    const result = await db.insert(supplierOrders)
+      .values({ userId: dbUserId, supplierId, label, quantity, unitPrice, amount, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create supplier order", error);
+  }
+}
+
+export async function updateSupplierOrder(
+  orderId: number,
+  dbUserId: number,
+  updates: {
+    supplierId?: number;
+    label?: string;
+    quantity?: number;
+    unitPrice?: number;
+    amount?: number;
+    orderDate?: string | null;
+    paymentStatus?: string;
+    invoiceNumber?: string | null;
+    invoiceImageUrl?: string | null;
+    note?: string | null;
+    expenseId?: number | null;
+    stockId?: number | null;
+    received?: boolean;
+    stockApplied?: boolean;
+  }
+) {
+  try {
+    // Si quantité et/ou prix unitaire changent, on recalcule le montant total.
+    const setFields: any = { ...updates };
+    if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+      const current = (await db.select().from(supplierOrders)
+        .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId))))[0];
+      if (current) {
+        const q = updates.quantity !== undefined ? updates.quantity : current.quantity;
+        const u = updates.unitPrice !== undefined ? updates.unitPrice : current.unitPrice;
+        setFields.amount = q * u;
+      }
+    }
+    const result = await db.update(supplierOrders)
+      .set(setFields)
+      .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update supplier order", error);
+  }
+}
+
+export async function deleteSupplierOrder(orderId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(supplierOrders)
+      .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete supplier order", error);
+  }
+}
+
 // --- STOCKS CRUD ---
 
 export async function getStocks(dbUserId: number) {
@@ -658,7 +768,9 @@ export async function createStock(
   unit = 'kg',
   minStock = 10.0,
   supplierId?: number | null,
-  invoiceImageUrl?: string | null
+  invoiceImageUrl?: string | null,
+  unitCost = 0.0,
+  initialQuantity?: number
 ) {
   try {
     const result = await db.insert(stocks)
@@ -666,10 +778,13 @@ export async function createStock(
         userId: dbUserId,
         itemName,
         quantity,
+        // À la création, la quantité initiale = quantité saisie (sauf valeur explicite).
+        initialQuantity: initialQuantity ?? quantity,
         unit,
         minStock,
         supplierId: supplierId || null,
         invoiceImageUrl: invoiceImageUrl || null,
+        unitCost,
       })
       .returning();
     return result[0];
@@ -684,10 +799,12 @@ export async function updateStock(
   updates: {
     itemName?: string;
     quantity?: number;
+    initialQuantity?: number;
     unit?: string;
     minStock?: number;
     supplierId?: number | null;
     invoiceImageUrl?: string | null;
+    unitCost?: number;
   }
 ) {
   try {
@@ -709,6 +826,113 @@ export async function deleteStock(stockId: number, dbUserId: number) {
     return result[0];
   } catch (error) {
     handleDbError("Failed to delete stock", error);
+  }
+}
+
+// --- STOCK MOVEMENTS (historique des approvisionnements) ---
+
+export async function getStockMovements(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(stockMovements)
+      .where(eq(stockMovements.userId, dbUserId))
+      .orderBy(desc(stockMovements.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch stock movements", error);
+  }
+}
+
+export async function createStockMovement(
+  dbUserId: number,
+  stockId: number,
+  itemName: string,
+  quantity: number,
+  unit: string,
+  note: string | null = null
+) {
+  try {
+    const result = await db.insert(stockMovements)
+      .values({ userId: dbUserId, stockId, itemName, quantity, unit, note })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create stock movement", error);
+  }
+}
+
+// Convertit une quantité d'une unité d'ingrédient vers l'unité d'un article de stock.
+// Renvoie null si les familles d'unités sont incompatibles (ex. g vers l) — dans ce cas on ne décrémente pas.
+function convertQty(value: number, fromUnit: string, toUnit: string): number | null {
+  const family = (u: string) => {
+    if (u === 'g' || u === 'kg') return 'mass';
+    if (u === 'ml' || u === 'l') return 'volume';
+    return 'count'; // piece, pieces, bouteilles, pce...
+  };
+  if (family(fromUnit) !== family(toUnit)) return null;
+  const toBase: Record<string, number> = { g: 1, kg: 1000, ml: 1, l: 1000 };
+  const fromFactor = toBase[fromUnit] ?? 1; // 'count' → 1
+  const toFactor = toBase[toUnit] ?? 1;
+  return (value * fromFactor) / toFactor;
+}
+
+// Décrémente le stock des ingrédients consommés par une commande (fiche technique × quantités vendues).
+// Idempotent : ne s'exécute qu'une fois par commande (drapeau stock_deducted).
+export async function deductStockForOrder(dbUserId: number, orderId: number) {
+  try {
+    const order = await getOrderById(orderId, dbUserId);
+    if (!order || order.stockDeducted) return { deducted: false, stocks: [] as any[], alerts: [] as any[] };
+
+    const items = order.items || [];
+    // Marque comme traité même sans lignes, pour éviter de re-tenter.
+    if (items.length === 0) {
+      await db.update(orders).set({ stockDeducted: true }).where(and(eq(orders.id, orderId), eq(orders.userId, dbUserId)));
+      return { deducted: true, stocks: [], alerts: [] };
+    }
+
+    // Fiches techniques (ingrédients) des plats de la commande.
+    const menuIds = Array.from(new Set(items.map((it: any) => Number(it.menuItemId)))) as number[];
+    const menus = await db.select().from(menuItems)
+      .where(and(eq(menuItems.userId, dbUserId), inArray(menuItems.id, menuIds)));
+    const ingredientsByMenu = new Map<number, any[]>(
+      menus.map((m: any) => [m.id, Array.isArray(m.ingredients) ? m.ingredients : []])
+    );
+
+    const stockList = await getStocks(dbUserId);
+    const stockById = new Map<number, any>((stockList || []).map((s: any) => [s.id, s]));
+
+    // Cumul de consommation par article de stock (dans l'unité du stock).
+    const consumption = new Map<number, number>();
+    for (const it of items) {
+      const ings = ingredientsByMenu.get(it.menuItemId) || [];
+      for (const ing of ings) {
+        if (ing.stockId == null) continue;
+        const st = stockById.get(ing.stockId);
+        if (!st) continue;
+        const converted = convertQty((Number(ing.grammage) || 0) * (Number(it.quantity) || 0), ing.unit, st.unit);
+        if (converted == null) continue; // unités incompatibles → on ne touche pas au stock
+        consumption.set(ing.stockId, (consumption.get(ing.stockId) || 0) + converted);
+      }
+    }
+
+    const affected: any[] = [];
+    const alerts: any[] = [];
+    for (const [stockId, amount] of consumption) {
+      const st = stockById.get(stockId);
+      const newQty = Math.max(0, (Number(st.quantity) || 0) - amount);
+      const [updated] = await db.update(stocks)
+        .set({ quantity: newQty })
+        .where(and(eq(stocks.id, stockId), eq(stocks.userId, dbUserId)))
+        .returning();
+      if (updated) {
+        affected.push(updated);
+        if (updated.quantity < updated.minStock) alerts.push(updated);
+      }
+    }
+
+    await db.update(orders).set({ stockDeducted: true }).where(and(eq(orders.id, orderId), eq(orders.userId, dbUserId)));
+    return { deducted: true, stocks: affected, alerts };
+  } catch (error) {
+    handleDbError("Failed to deduct stock for order", error);
   }
 }
 
@@ -791,15 +1015,98 @@ export async function createExpense(
   notes: string | null = null,
   invoiceNumber: string | null = null,
   origin: string | null = null,
-  imageUrl: string | null = null
+  imageUrl: string | null = null,
+  recurringId: number | null = null
 ) {
   try {
     const result = await db.insert(expenses)
-      .values({ userId: dbUserId, label, category, amount, expenseDate, notes, invoiceNumber, origin, imageUrl })
+      .values({ userId: dbUserId, label, category, amount, expenseDate, notes, invoiceNumber, origin, imageUrl, recurringId })
       .returning();
     return result[0];
   } catch (error) {
     handleDbError("Failed to create expense", error);
+  }
+}
+
+// --- RECURRING EXPENSES (charges récurrentes mensuelles) ---
+
+export async function getRecurringExpenses(dbUserId: number) {
+  try {
+    return await db.select().from(recurringExpenses)
+      .where(eq(recurringExpenses.userId, dbUserId))
+      .orderBy(desc(recurringExpenses.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch recurring expenses", error);
+  }
+}
+
+export async function createRecurringExpense(
+  dbUserId: number,
+  label: string,
+  category = 'divers',
+  amount = 0.0,
+  dayOfMonth = 1,
+  active = true
+) {
+  try {
+    const result = await db.insert(recurringExpenses)
+      .values({ userId: dbUserId, label, category, amount, dayOfMonth, active })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create recurring expense", error);
+  }
+}
+
+export async function updateRecurringExpense(
+  id: number,
+  dbUserId: number,
+  updates: { label?: string; category?: string; amount?: number; dayOfMonth?: number; active?: boolean }
+) {
+  try {
+    const result = await db.update(recurringExpenses)
+      .set(updates)
+      .where(and(eq(recurringExpenses.id, id), eq(recurringExpenses.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update recurring expense", error);
+  }
+}
+
+export async function deleteRecurringExpense(id: number, dbUserId: number) {
+  try {
+    const result = await db.delete(recurringExpenses)
+      .where(and(eq(recurringExpenses.id, id), eq(recurringExpenses.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete recurring expense", error);
+  }
+}
+
+// Matérialise les charges récurrentes actives en dépenses réelles pour un mois donné (YYYY-MM),
+// sans doublon (une dépense par charge et par mois). Renvoie les dépenses nouvellement créées.
+export async function generateRecurringExpenses(dbUserId: number, monthPrefix: string) {
+  try {
+    const templates = await db.select().from(recurringExpenses)
+      .where(and(eq(recurringExpenses.userId, dbUserId), eq(recurringExpenses.active, true)));
+    const existing = await db.select().from(expenses)
+      .where(eq(expenses.userId, dbUserId));
+    const created: any[] = [];
+    for (const t of templates) {
+      const already = existing.some((e: any) => e.recurringId === t.id && (e.expenseDate || '').slice(0, 7) === monthPrefix);
+      if (already) continue;
+      const day = String(Math.min(28, Math.max(1, t.dayOfMonth || 1))).padStart(2, '0');
+      const exp = await createExpense(
+        dbUserId, t.label, t.category, t.amount,
+        `${monthPrefix}-${day}`, 'Charge récurrente', null, null, null, t.id
+      );
+      created.push(exp);
+    }
+    return created;
+  } catch (error) {
+    handleDbError("Failed to generate recurring expenses", error);
   }
 }
 
@@ -836,6 +1143,117 @@ export async function deleteExpense(expenseId: number, dbUserId: number) {
     return result[0];
   } catch (error) {
     handleDbError("Failed to delete expense", error);
+  }
+}
+
+// --- SPECIAL EVENTS CRUD (événements du calendrier) ---
+
+export async function getSpecialEvents(dbUserId: number) {
+  try {
+    return await db.select().from(specialEvents)
+      .where(eq(specialEvents.userId, dbUserId))
+      .orderBy(desc(specialEvents.date));
+  } catch (error) {
+    handleDbError("Failed to fetch special events", error);
+  }
+}
+
+export async function createSpecialEvent(
+  dbUserId: number,
+  title: string,
+  date: string,
+  time: string | null = null,
+  category = 'theme',
+  notes: string | null = null
+) {
+  try {
+    const result = await db.insert(specialEvents)
+      .values({ userId: dbUserId, title, date, time, category, notes })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create special event", error);
+  }
+}
+
+export async function deleteSpecialEvent(eventId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(specialEvents)
+      .where(and(eq(specialEvents.id, eventId), eq(specialEvents.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete special event", error);
+  }
+}
+
+// --- INCOMES CRUD (Rentrées d'argent) ---
+
+export async function getIncomes(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(incomes)
+      .where(eq(incomes.userId, dbUserId))
+      .orderBy(desc(incomes.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch incomes from database", error);
+  }
+}
+
+export async function createIncome(
+  dbUserId: number,
+  label: string,
+  category = 'autre',
+  amount = 0.0,
+  source: string | null = null,
+  paymentMethod = 'especes',
+  incomeDate: string | null = null,
+  imageUrl: string | null = null,
+  notes: string | null = null
+) {
+  try {
+    const result = await db.insert(incomes)
+      .values({ userId: dbUserId, label, category, amount, source, paymentMethod, incomeDate, imageUrl, notes })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create income", error);
+  }
+}
+
+export async function updateIncome(
+  incomeId: number,
+  dbUserId: number,
+  updates: {
+    label?: string;
+    category?: string;
+    amount?: number;
+    source?: string | null;
+    paymentMethod?: string;
+    incomeDate?: string | null;
+    imageUrl?: string | null;
+    notes?: string | null;
+  }
+) {
+  try {
+    const result = await db.update(incomes)
+      .set(updates)
+      .where(and(eq(incomes.id, incomeId), eq(incomes.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update income", error);
+  }
+}
+
+export async function deleteIncome(incomeId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(incomes)
+      .where(and(eq(incomes.id, incomeId), eq(incomes.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete income", error);
   }
 }
 

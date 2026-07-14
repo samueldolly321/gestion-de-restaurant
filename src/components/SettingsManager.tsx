@@ -14,7 +14,7 @@ interface SettingsManagerProps {
 }
 
 export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsManagerProps) {
-  const [restaurantName, setRestaurantName] = useState(dbUser.restaurantName || 'ChefSuite Realtime');
+  const [restaurantName, setRestaurantName] = useState(dbUser.restaurantName || 'RestoPilote');
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState(dbUser.restaurantLogoUrl || '');
   const [restaurantPhone, setRestaurantPhone] = useState(dbUser.restaurantPhone || '');
   const [restaurantAddress, setRestaurantAddress] = useState(dbUser.restaurantAddress || '');

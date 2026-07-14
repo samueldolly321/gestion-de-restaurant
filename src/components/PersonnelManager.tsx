@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Personnel } from '../types.ts';
-import { Search, Plus, UserCheck, Shield, Phone, Mail, DollarSign, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, X, Calendar, Lock } from 'lucide-react';
+import { Search, Plus, UserCheck, Shield, Phone, Mail, DollarSign, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, X, Calendar, Lock, FileText } from 'lucide-react';
 
 // Rôles prédéfinis ; tout autre valeur est un rôle personnalisé (« Autre »).
 const KNOWN_ROLES = ['serveur', 'cuisinier', 'chef_cuisinier', 'femme_menage', 'livreur', 'barman', 'manager'];
@@ -37,6 +37,8 @@ export default function PersonnelManager({
   const [leaveStartDate, setLeaveStartDate] = useState('');
   const [leaveEndDate, setLeaveEndDate] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [cvUrl, setCvUrl] = useState('');
+  const [cvName, setCvName] = useState(''); // nom du fichier CV importé (affichage)
 
   const canAccessSalaries = userRole === 'super_admin';
 
@@ -64,6 +66,8 @@ export default function PersonnelManager({
     setLeaveStartDate('');
     setLeaveEndDate('');
     setAvatarUrl('');
+    setCvUrl('');
+    setCvName('');
     setIsOpen(true);
   };
 
@@ -87,6 +91,8 @@ export default function PersonnelManager({
     setLeaveStartDate(staff.leaveStart || '');
     setLeaveEndDate(staff.leaveEnd || '');
     setAvatarUrl(staff.avatarUrl || '');
+    setCvUrl(staff.cvUrl || '');
+    setCvName(staff.cvUrl ? 'CV enregistré' : '');
     setIsOpen(true);
   };
 
@@ -97,6 +103,16 @@ export default function PersonnelManager({
       reader.onloadend = () => {
         setAvatarUrl(reader.result as string);
       };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCvName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => setCvUrl(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
@@ -116,6 +132,7 @@ export default function PersonnelManager({
       leaveStartDate: leaveStartDate || null,
       leaveEndDate: leaveEndDate || null,
       avatarUrl: avatarUrl || null,
+      cvUrl: cvUrl || null,
     };
 
     // Only update salary if user is Super Admin
@@ -250,7 +267,12 @@ export default function PersonnelManager({
                 <div className="space-y-2.5 mt-4 text-xs text-slate-500">
                   {staff.phone && <p>📞 {staff.phone}</p>}
                   {staff.email && <p className="truncate">✉️ {staff.email}</p>}
-                  
+                  {staff.cvUrl && (
+                    <a href={staff.cvUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg hover:bg-emerald-100 transition-colors">
+                      <FileText className="w-3 h-3" /> Voir le CV
+                    </a>
+                  )}
+
                   {staff.hireDate && (
                     <p className="flex items-center gap-1 text-[11px]">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
@@ -377,6 +399,43 @@ export default function PersonnelManager({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* CV de l'employé (PDF ou image) */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <FileText className="w-3 h-3" /> CV (PDF ou image)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={handleCvChange}
+                    className="flex-1 text-[10px] text-slate-500 file:mr-3 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 transition-all cursor-pointer"
+                  />
+                  {cvUrl && (
+                    <>
+                      <a
+                        href={cvUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100 transition-colors shrink-0"
+                        title={cvName || 'Ouvrir le CV'}
+                      >
+                        📄 Voir le CV
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => { setCvUrl(''); setCvName(''); }}
+                        className="p-1 text-slate-400 hover:text-rose-600 rounded shrink-0"
+                        title="Retirer le CV"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                {cvName && <p className="text-[9px] text-slate-400 mt-1 truncate">{cvName}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

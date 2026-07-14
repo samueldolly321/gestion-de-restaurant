@@ -40,14 +40,34 @@ import {
   createSupplier,
   updateSupplier,
   deleteSupplier,
+  getSupplierOrders,
+  getSupplierOrderById,
+  createSupplierOrder,
+  updateSupplierOrder,
+  deleteSupplierOrder,
   getStocks,
   createStock,
   updateStock,
   deleteStock,
+  deductStockForOrder,
+  getStockMovements,
+  createStockMovement,
   getExpenses,
   createExpense,
   updateExpense,
   deleteExpense,
+  getIncomes,
+  createIncome,
+  updateIncome,
+  deleteIncome,
+  getSpecialEvents,
+  createSpecialEvent,
+  deleteSpecialEvent,
+  getRecurringExpenses,
+  createRecurringExpense,
+  updateRecurringExpense,
+  deleteRecurringExpense,
+  generateRecurringExpenses,
   getDeliveries,
   createDelivery,
   updateDelivery,
@@ -266,7 +286,7 @@ async function startServer() {
 
   app.post('/api/personnel', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl } = req.body;
+      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl } = req.body;
       if (!dbUserId || !name) {
         return res.status(400).json({ error: 'Missing dbUserId or name' });
       }
@@ -288,7 +308,8 @@ async function startServer() {
         leaveStart,
         leaveEnd,
         hireDate,
-        avatarUrl
+        avatarUrl,
+        cvUrl
       );
 
       // Save notification to database
@@ -310,7 +331,7 @@ async function startServer() {
   app.put('/api/personnel/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const personnelId = parseInt(req.params.id);
-      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl } = req.body;
+      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl } = req.body;
 
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
@@ -331,7 +352,8 @@ async function startServer() {
         leaveStart,
         leaveEnd,
         hireDate,
-        avatarUrl
+        avatarUrl,
+        cvUrl
       });
 
       if (!updated) {
@@ -491,6 +513,23 @@ async function startServer() {
     }
   });
 
+  // Déduction auto du stock des ingrédients quand une commande est payée (une seule fois par commande).
+  async function handleStockDeduction(dbUserId: number, orderId: number) {
+    const result = await deductStockForOrder(dbUserId, orderId);
+    if (!result || !result.deducted || result.stocks.length === 0) return;
+    const room = String(dbUserId);
+    for (const s of result.stocks) io.to(room).emit('stock_updated', s);
+    for (const a of result.alerts) {
+      const notif = await createNotification(
+        dbUserId,
+        'Stock bas',
+        `${a.itemName} : ${a.quantity} ${a.unit} restant (seuil ${a.minStock}).`,
+        'system'
+      );
+      io.to(room).emit('notification', notif);
+    }
+  }
+
   app.post('/api/orders', requireAuth, async (req: AuthRequest, res) => {
     try {
       const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate } = req.body;
@@ -518,6 +557,11 @@ async function startServer() {
       const room = String(dbUserId);
       io.to(room).emit('order_created', newOrder);
       io.to(room).emit('notification', newNotif);
+
+      // Dès que le plat est servi (ou payé), on décrémente le stock des ingrédients consommés.
+      if (newOrder?.status === 'servi' || newOrder?.status === 'paye') {
+        await handleStockDeduction(parseInt(dbUserId), newOrder.id);
+      }
 
       res.status(201).json(newOrder);
     } catch (error: any) {
@@ -556,6 +600,11 @@ async function startServer() {
       const room = String(dbUserId);
       io.to(room).emit('order_updated', updated);
       io.to(room).emit('notification', newNotif);
+
+      // Déduction auto du stock dès "servi" (ou "payé"), une seule fois grâce au drapeau stock_deducted.
+      if (updated.status === 'servi' || updated.status === 'paye') {
+        await handleStockDeduction(parseInt(dbUserId), orderId);
+      }
 
       res.json(updated);
     } catch (error: any) {
@@ -811,7 +860,7 @@ async function startServer() {
 
   app.post('/api/suppliers', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, name, contactName, phone, email, paymentStatus, contractDate, amountDue } = req.body;
+      const { dbUserId, name, contactName, phone, email, paymentStatus, contractDate, amountDue, invoiceNumber, invoiceImageUrl } = req.body;
       if (!dbUserId || !name) return res.status(400).json({ error: 'Missing required fields' });
       const newSupplier = await createSupplier(
         parseInt(dbUserId),
@@ -821,7 +870,9 @@ async function startServer() {
         email,
         paymentStatus,
         contractDate,
-        amountDue ? parseFloat(amountDue) : 0.0
+        amountDue ? parseFloat(amountDue) : 0.0,
+        invoiceNumber || null,
+        invoiceImageUrl || null
       );
       const room = String(dbUserId);
       io.to(room).emit('supplier_created', newSupplier);
@@ -834,7 +885,7 @@ async function startServer() {
   app.put('/api/suppliers/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const supplierId = parseInt(req.params.id);
-      const { dbUserId, name, contactName, phone, email, paymentStatus, contractDate, amountDue } = req.body;
+      const { dbUserId, name, contactName, phone, email, paymentStatus, contractDate, amountDue, invoiceNumber, invoiceImageUrl } = req.body;
       if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
       const updated = await updateSupplier(supplierId, parseInt(dbUserId), {
         name,
@@ -843,7 +894,9 @@ async function startServer() {
         email,
         paymentStatus,
         contractDate,
-        amountDue: amountDue ? parseFloat(amountDue) : undefined
+        amountDue: amountDue !== undefined ? parseFloat(amountDue) : undefined,
+        invoiceNumber: invoiceNumber !== undefined ? (invoiceNumber || null) : undefined,
+        invoiceImageUrl: invoiceImageUrl !== undefined ? (invoiceImageUrl || null) : undefined
       });
       const room = String(dbUserId);
       io.to(room).emit('supplier_updated', updated);
@@ -867,6 +920,177 @@ async function startServer() {
     }
   });
 
+  // --- SUPPLIER ORDERS ENDPOINTS (commandes passées aux fournisseurs) ---
+
+  // Synchronise la dépense automatique liée à une commande fournisseur selon son statut de paiement.
+  // Payé → crée/met à jour une dépense (Dépenses diverses) ; non payé → retire la dépense liée.
+  async function syncSupplierOrderExpense(dbUserId: number, order: any) {
+    const room = String(dbUserId);
+    const sups = await getSuppliers(dbUserId);
+    const supName = (sups || []).find((s: any) => s.id === order.supplierId)?.name || 'Fournisseur';
+
+    if (order.paymentStatus === 'paye') {
+      if (order.expenseId) {
+        const upd = await updateExpense(order.expenseId, dbUserId, {
+          label: order.label, category: 'ingredients', amount: order.amount,
+          expenseDate: order.orderDate, notes: order.note,
+          invoiceNumber: order.invoiceNumber, origin: supName, imageUrl: order.invoiceImageUrl,
+        });
+        if (upd) { io.to(room).emit('expense_updated', upd); return; }
+        // La dépense a été supprimée entre-temps : on la recrée ci-dessous.
+      }
+      const exp = await createExpense(
+        dbUserId, order.label, 'ingredients', order.amount,
+        order.orderDate, order.note, order.invoiceNumber, supName, order.invoiceImageUrl
+      );
+      io.to(room).emit('expense_created', exp);
+      await updateSupplierOrder(order.id, dbUserId, { expenseId: exp.id });
+    } else if (order.expenseId) {
+      // Non payé : on retire la dépense automatique précédemment créée.
+      const del = await deleteExpense(order.expenseId, dbUserId);
+      if (del) io.to(room).emit('expense_deleted', { id: order.expenseId });
+      await updateSupplierOrder(order.id, dbUserId, { expenseId: null });
+    }
+  }
+
+  // Option ① : à la réception d'une commande fournisseur liée à un article de stock,
+  // on ajoute la quantité au stock (+ mouvement d'historique + coût unitaire). Idempotent.
+  async function applySupplierOrderToStock(dbUserId: number, order: any) {
+    if (!order || !order.received || !order.stockId || order.stockApplied) return;
+    const stocksList = await getStocks(dbUserId);
+    const stock = (stocksList || []).find((s: any) => s.id === order.stockId);
+    if (!stock) return;
+    const qty = Number(order.quantity) || 0;
+    const newQty = (Number(stock.quantity) || 0) + qty;
+    const newInit = (Number(stock.initialQuantity) || 0) + qty;
+    const updatedStock = await updateStock(order.stockId, dbUserId, {
+      quantity: newQty,
+      initialQuantity: newInit,
+      unitCost: Number(order.unitPrice) || stock.unitCost, // le prix d'achat met à jour le coût unitaire
+    });
+    const room = String(dbUserId);
+    if (updatedStock) io.to(room).emit('stock_updated', updatedStock);
+    const mv = await createStockMovement(dbUserId, stock.id, stock.itemName, qty, stock.unit, `Commande fournisseur : ${order.label}`);
+    io.to(room).emit('stock_movement_created', mv);
+    await updateSupplierOrder(order.id, dbUserId, { stockApplied: true });
+  }
+
+  app.get('/api/supplier-orders', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const list = await getSupplierOrders(dbUserId);
+      res.json(list || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/supplier-orders', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, supplierId, label, quantity, unitPrice, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received, newStockUnit } = req.body;
+      if (!dbUserId || !supplierId || !label) {
+        return res.status(400).json({ error: 'Missing dbUserId, supplierId or label' });
+      }
+      // Si demandé, on crée un NOUVEL article de stock (à partir de l'objet de la commande) et on le lie.
+      let linkedStockId = stockId ? parseInt(stockId) : null;
+      if (!linkedStockId && newStockUnit) {
+        const st = await createStock(
+          parseInt(dbUserId), label, 0, newStockUnit, 5,
+          supplierId ? parseInt(supplierId) : null, null,
+          unitPrice !== undefined ? parseFloat(unitPrice) : 0.0
+        );
+        linkedStockId = st.id;
+        io.to(String(dbUserId)).emit('stock_created', st);
+      }
+      const newOrder = await createSupplierOrder(
+        parseInt(dbUserId),
+        parseInt(supplierId),
+        label,
+        quantity !== undefined ? parseFloat(quantity) : 1.0,
+        unitPrice !== undefined ? parseFloat(unitPrice) : 0.0,
+        orderDate || null,
+        paymentStatus || 'en_attente',
+        invoiceNumber || null,
+        invoiceImageUrl || null,
+        note || null,
+        linkedStockId,
+        received === true || received === 'true'
+      );
+      await syncSupplierOrderExpense(parseInt(dbUserId), newOrder);
+      // Si créée déjà "reçue" et liée à un stock, on alimente le stock immédiatement.
+      const afterExpense = await getSupplierOrderById(newOrder.id, parseInt(dbUserId));
+      await applySupplierOrderToStock(parseInt(dbUserId), afterExpense);
+      const finalOrder = await getSupplierOrderById(newOrder.id, parseInt(dbUserId));
+      io.to(String(dbUserId)).emit('supplier_order_created', finalOrder);
+      res.status(201).json(finalOrder);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/supplier-orders/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const { dbUserId, supplierId, label, quantity, unitPrice, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received, newStockUnit } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      // Création d'un nouvel article de stock lié (si demandé et aucun stockId fourni).
+      let linkedStockId = stockId !== undefined ? (stockId ? parseInt(stockId) : null) : undefined;
+      if ((linkedStockId === undefined || linkedStockId === null) && newStockUnit) {
+        const existing = await getSupplierOrderById(orderId, parseInt(dbUserId));
+        const stName = label || existing?.label || 'Article';
+        const stPrice = unitPrice !== undefined ? parseFloat(unitPrice) : (existing?.unitPrice || 0);
+        const st = await createStock(parseInt(dbUserId), stName, 0, newStockUnit, 5, supplierId ? parseInt(supplierId) : (existing?.supplierId || null), null, stPrice);
+        linkedStockId = st.id;
+        io.to(String(dbUserId)).emit('stock_created', st);
+      }
+      const updated = await updateSupplierOrder(orderId, parseInt(dbUserId), {
+        supplierId: supplierId !== undefined ? parseInt(supplierId) : undefined,
+        label,
+        quantity: quantity !== undefined ? parseFloat(quantity) : undefined,
+        unitPrice: unitPrice !== undefined ? parseFloat(unitPrice) : undefined,
+        orderDate: orderDate !== undefined ? (orderDate || null) : undefined,
+        paymentStatus,
+        invoiceNumber: invoiceNumber !== undefined ? (invoiceNumber || null) : undefined,
+        invoiceImageUrl: invoiceImageUrl !== undefined ? (invoiceImageUrl || null) : undefined,
+        note: note !== undefined ? (note || null) : undefined,
+        stockId: linkedStockId,
+        received: received !== undefined ? (received === true || received === 'true') : undefined
+      });
+      if (!updated) return res.status(404).json({ error: 'Supplier order not found or access denied' });
+      await syncSupplierOrderExpense(parseInt(dbUserId), updated);
+      // Réception → alimente le stock (une seule fois, garde-fou stockApplied).
+      const afterExpense = await getSupplierOrderById(orderId, parseInt(dbUserId));
+      await applySupplierOrderToStock(parseInt(dbUserId), afterExpense);
+      const finalOrder = await getSupplierOrderById(orderId, parseInt(dbUserId));
+      io.to(String(dbUserId)).emit('supplier_order_updated', finalOrder);
+      res.json(finalOrder);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/supplier-orders/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const existing = await getSupplierOrderById(orderId, dbUserId);
+      const deleted = await deleteSupplierOrder(orderId, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Supplier order not found or access denied' });
+      const room = String(dbUserId);
+      // On retire aussi la dépense automatique liée, le cas échéant.
+      if (existing?.expenseId) {
+        const del = await deleteExpense(existing.expenseId, dbUserId);
+        if (del) io.to(room).emit('expense_deleted', { id: existing.expenseId });
+      }
+      io.to(room).emit('supplier_order_deleted', { id: orderId });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // --- STOCKS ENDPOINTS ---
   app.get('/api/stocks', requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -881,7 +1105,7 @@ async function startServer() {
 
   app.post('/api/stocks', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, itemName, quantity, unit, minStock, supplierId, invoiceImageUrl } = req.body;
+      const { dbUserId, itemName, quantity, initialQuantity, unit, minStock, supplierId, invoiceImageUrl, unitCost } = req.body;
       if (!dbUserId || !itemName) return res.status(400).json({ error: 'Missing required fields' });
       const newStock = await createStock(
         parseInt(dbUserId),
@@ -890,10 +1114,19 @@ async function startServer() {
         unit,
         minStock ? parseFloat(minStock) : 10.0,
         supplierId ? parseInt(supplierId) : null,
-        invoiceImageUrl
+        invoiceImageUrl,
+        unitCost ? parseFloat(unitCost) : 0.0,
+        initialQuantity !== undefined ? parseFloat(initialQuantity) : undefined
       );
       const room = String(dbUserId);
       io.to(room).emit('stock_created', newStock);
+
+      // Historique : l'approvisionnement initial est enregistré comme premier mouvement.
+      if (newStock && newStock.quantity > 0) {
+        const mv = await createStockMovement(parseInt(dbUserId), newStock.id, newStock.itemName, newStock.quantity, newStock.unit, 'Approvisionnement initial');
+        io.to(room).emit('stock_movement_created', mv);
+      }
+
       res.status(201).json(newStock);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -903,18 +1136,28 @@ async function startServer() {
   app.put('/api/stocks/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const stockId = parseInt(req.params.id);
-      const { dbUserId, itemName, quantity, unit, minStock, supplierId, invoiceImageUrl } = req.body;
+      const { dbUserId, itemName, quantity, initialQuantity, unit, minStock, supplierId, invoiceImageUrl, unitCost, restockAmount, restockNote } = req.body;
       if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
       const updated = await updateStock(stockId, parseInt(dbUserId), {
         itemName,
-        quantity: quantity ? parseFloat(quantity) : undefined,
+        quantity: quantity !== undefined ? parseFloat(quantity) : undefined,
+        initialQuantity: initialQuantity !== undefined ? parseFloat(initialQuantity) : undefined,
         unit,
-        minStock: minStock ? parseFloat(minStock) : undefined,
+        minStock: minStock !== undefined ? parseFloat(minStock) : undefined,
         supplierId: supplierId !== undefined ? (supplierId ? parseInt(supplierId) : null) : undefined,
-        invoiceImageUrl
+        invoiceImageUrl,
+        unitCost: unitCost !== undefined ? parseFloat(unitCost) : undefined
       });
       const room = String(dbUserId);
       io.to(room).emit('stock_updated', updated);
+
+      // Historique : si un réapprovisionnement a été saisi, on enregistre le mouvement daté.
+      const restock = restockAmount !== undefined ? parseFloat(restockAmount) : 0;
+      if (updated && restock > 0) {
+        const mv = await createStockMovement(parseInt(dbUserId), updated.id, updated.itemName, restock, updated.unit, restockNote || null);
+        io.to(room).emit('stock_movement_created', mv);
+      }
+
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -930,6 +1173,18 @@ async function startServer() {
       const room = String(dbUserId);
       io.to(room).emit('stock_deleted', { id: stockId });
       res.json({ message: 'Stock item deleted successfully', stock: deleted });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Historique des approvisionnements de stock (date + heure).
+  app.get('/api/stock-movements', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const list = await getStockMovements(dbUserId);
+      res.json(list || []);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1086,6 +1341,196 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
       if (!deleted) return res.status(404).json({ error: 'Expense not found or access denied' });
 
       io.to(String(dbUserId)).emit('expense_deleted', { id: expenseId });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- RECURRING EXPENSES ENDPOINTS (charges récurrentes) ---
+  app.get('/api/recurring-expenses', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      res.json((await getRecurringExpenses(dbUserId)) || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/recurring-expenses', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, label, category, amount, dayOfMonth, active } = req.body;
+      if (!dbUserId || !label) return res.status(400).json({ error: 'Missing dbUserId or label' });
+      const created = await createRecurringExpense(
+        parseInt(dbUserId), label, category || 'divers',
+        amount ? parseFloat(amount) : 0.0,
+        dayOfMonth ? parseInt(dayOfMonth) : 1,
+        active !== undefined ? !!active : true
+      );
+      const room = String(dbUserId);
+      io.to(room).emit('recurring_expense_created', created);
+      // On matérialise immédiatement la charge pour le mois en cours.
+      const monthPrefix = new Date().toISOString().slice(0, 7);
+      const newExpenses = await generateRecurringExpenses(parseInt(dbUserId), monthPrefix);
+      for (const e of (newExpenses || [])) io.to(room).emit('expense_created', e);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/recurring-expenses/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { dbUserId, label, category, amount, dayOfMonth, active } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const updated = await updateRecurringExpense(id, parseInt(dbUserId), {
+        label, category,
+        amount: amount !== undefined ? parseFloat(amount) : undefined,
+        dayOfMonth: dayOfMonth !== undefined ? parseInt(dayOfMonth) : undefined,
+        active: active !== undefined ? !!active : undefined
+      });
+      if (!updated) return res.status(404).json({ error: 'Recurring expense not found' });
+      io.to(String(dbUserId)).emit('recurring_expense_updated', updated);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/recurring-expenses/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const deleted = await deleteRecurringExpense(id, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Recurring expense not found' });
+      io.to(String(dbUserId)).emit('recurring_expense_deleted', { id });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Matérialise les charges récurrentes du mois en cours (appelé au chargement de l'app).
+  app.post('/api/recurring-expenses/generate', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const monthPrefix = new Date().toISOString().slice(0, 7);
+      const created = await generateRecurringExpenses(parseInt(dbUserId), monthPrefix);
+      const room = String(dbUserId);
+      for (const e of (created || [])) io.to(room).emit('expense_created', e);
+      res.json({ created: created || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- SPECIAL EVENTS ENDPOINTS (calendrier) ---
+  app.get('/api/special-events', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      res.json((await getSpecialEvents(dbUserId)) || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/special-events', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, title, date, time, category, notes } = req.body;
+      if (!dbUserId || !title || !date) return res.status(400).json({ error: 'Missing dbUserId, title or date' });
+      const created = await createSpecialEvent(parseInt(dbUserId), title, date, time || null, category || 'theme', notes || null);
+      io.to(String(dbUserId)).emit('special_event_created', created);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/special-events/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const deleted = await deleteSpecialEvent(eventId, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Event not found or access denied' });
+      io.to(String(dbUserId)).emit('special_event_deleted', { id: eventId });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- INCOMES ENDPOINTS (Rentrées d'argent) ---
+  app.get('/api/incomes', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const list = await getIncomes(dbUserId);
+      res.json(list || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/incomes', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, label, category, amount, source, paymentMethod, incomeDate, imageUrl, notes } = req.body;
+      if (!dbUserId || !label) return res.status(400).json({ error: 'Missing dbUserId or label' });
+      const newIncome = await createIncome(
+        parseInt(dbUserId),
+        label,
+        category,
+        amount ? parseFloat(amount) : 0.0,
+        source || null,
+        paymentMethod || 'especes',
+        incomeDate || null,
+        imageUrl || null,
+        notes || null
+      );
+      const room = String(dbUserId);
+      io.to(room).emit('income_created', newIncome);
+      res.status(201).json(newIncome);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/incomes/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const incomeId = parseInt(req.params.id);
+      const { dbUserId, label, category, amount, source, paymentMethod, incomeDate, imageUrl, notes } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const updated = await updateIncome(incomeId, parseInt(dbUserId), {
+        label,
+        category,
+        amount: amount !== undefined ? parseFloat(amount) : undefined,
+        source: source !== undefined ? (source || null) : undefined,
+        paymentMethod,
+        incomeDate: incomeDate !== undefined ? (incomeDate || null) : undefined,
+        imageUrl: imageUrl !== undefined ? (imageUrl || null) : undefined,
+        notes: notes !== undefined ? (notes || null) : undefined
+      });
+      if (!updated) return res.status(404).json({ error: 'Income not found or access denied' });
+      io.to(String(dbUserId)).emit('income_updated', updated);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/incomes/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const incomeId = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const deleted = await deleteIncome(incomeId, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Income not found or access denied' });
+      io.to(String(dbUserId)).emit('income_deleted', { id: incomeId });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

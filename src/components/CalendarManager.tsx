@@ -1,15 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Clock, Star, Plus, Trash2, X, ChevronLeft, ChevronRight, Filter, Info } from 'lucide-react';
-import { Reservation, Personnel, Delivery } from '../types.ts';
-
-export interface SpecialEvent {
-  id: string;
-  title: string;
-  date: string; // YYYY-MM-DD
-  time?: string; // HH:MM
-  category: 'concert' | 'theme' | 'vip' | 'fermeture' | 'autre';
-  notes?: string;
-}
+import { Reservation, Personnel, Delivery, SpecialEvent } from '../types.ts';
 
 // Événement affiché dans le calendrier (réservation, congé, livraison ou événement spécial).
 interface CalendarEvent {
@@ -30,12 +21,15 @@ interface CalendarManagerProps {
   reservations: Reservation[];
   personnel: Personnel[];
   deliveries: Delivery[];
+  specialEvents: SpecialEvent[];
+  onAddSpecialEvent: (data: any) => Promise<void>;
+  onDeleteSpecialEvent: (id: number) => Promise<void>;
   dbUserId: number;
 }
 
-export default function CalendarManager({ reservations, personnel, deliveries, dbUserId }: CalendarManagerProps) {
+export default function CalendarManager({ reservations, personnel, deliveries, specialEvents, onAddSpecialEvent, onDeleteSpecialEvent, dbUserId }: CalendarManagerProps) {
+  void dbUserId;
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null); // modale de détail au clic
   const [filterType, setFilterType] = useState<'all' | 'reservation' | 'leave' | 'special' | 'delivery'>('all');
@@ -46,24 +40,6 @@ export default function CalendarManager({ reservations, personnel, deliveries, d
   const [timeStr, setTimeStr] = useState('');
   const [category, setCategory] = useState<'concert' | 'theme' | 'vip' | 'fermeture' | 'autre'>('theme');
   const [notes, setNotes] = useState('');
-
-  // Load special events from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(`chefsuite_special_events_${dbUserId}`);
-    if (saved) {
-      try {
-        setSpecialEvents(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse special events", e);
-      }
-    }
-  }, [dbUserId]);
-
-  // Save special events to localStorage
-  const saveEvents = (updated: SpecialEvent[]) => {
-    setSpecialEvents(updated);
-    localStorage.setItem(`chefsuite_special_events_${dbUserId}`, JSON.stringify(updated));
-  };
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -82,26 +58,16 @@ export default function CalendarManager({ reservations, personnel, deliveries, d
     setIsModalOpen(true);
   };
 
-  const handleAddEvent = (e: React.FormEvent) => {
+  const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !dateStr) return;
-
-    const newEvent: SpecialEvent = {
-      id: `evt_${Date.now()}`,
-      title,
-      date: dateStr,
-      time: timeStr || undefined,
-      category,
-      notes: notes || undefined,
-    };
-
-    saveEvents([...specialEvents, newEvent]);
+    await onAddSpecialEvent({ title, date: dateStr, time: timeStr || null, category, notes: notes || null });
     setIsModalOpen(false);
   };
 
   const handleDeleteEvent = (id: string) => {
     if (confirm("Supprimer cet événement spécial du calendrier ?")) {
-      saveEvents(specialEvents.filter(e => e.id !== id));
+      onDeleteSpecialEvent(Number(id));
     }
   };
 
@@ -258,19 +224,19 @@ export default function CalendarManager({ reservations, personnel, deliveries, d
             autre: { bg: 'bg-slate-100 hover:bg-slate-150', border: 'border-slate-300', text: 'text-slate-800' },
           };
 
-          const style = catColors[e.category] || catColors.autre;
+          const style = catColors[e.category as keyof typeof catColors] || catColors.autre;
 
           dayEvents.push({
-            id: e.id,
+            id: String(e.id),
             type: 'special',
             title: `${catEmoji} ${e.title}`,
-            time: e.time,
+            time: e.time || undefined,
             category: e.category,
             date: dateString,
             color: style.bg,
             borderColor: style.border,
             textColor: style.text,
-            notes: e.notes,
+            notes: e.notes || undefined,
             details: [
               { label: 'Événement', value: e.title },
               { label: 'Catégorie', value: e.category },

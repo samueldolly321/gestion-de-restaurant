@@ -18,7 +18,7 @@ export default function AIManager({ token, dbUserId }: AIManagerProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Manao ahoana! Je suis votre Conseiller IA ChefSuite. Je peux analyser en temps réel vos ventes, vos stocks, et calculer un indice de méritocratie objectif pour votre personnel. Cliquez sur l'une des suggestions ci-dessous ou posez-moi votre question directement !",
+      content: "Manao ahoana! Je suis votre Conseiller IA RestoPilote. Je peux analyser en temps réel vos ventes, vos stocks, et calculer un indice de méritocratie objectif pour votre personnel. Cliquez sur l'une des suggestions ci-dessous ou posez-moi votre question directement !",
       timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -209,7 +209,7 @@ export default function AIManager({ token, dbUserId }: AIManagerProps) {
           <div className="px-5 py-3.5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="text-xs font-bold text-slate-700">ChefSuite IA - Mode Audit Madagascar</span>
+              <span className="text-xs font-bold text-slate-700">RestoPilote IA - Mode Audit Madagascar</span>
             </div>
             {loading && (
               <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1.5 animate-pulse">
