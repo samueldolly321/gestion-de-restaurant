@@ -1,0 +1,6 @@
+{
+  "name": "Gestion de Restaurant",
+  "description": "Système de gestion complet pour restaurant incluant la gestion en temps réel des commandes, du personnel, de la fidélité client et de la carte.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

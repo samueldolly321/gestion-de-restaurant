@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Secrets / configuration locale — NE PAS pousser sur un dépôt public
+firebase-applet-config.json
+!firebase-applet-config.example.json
+chefsuite
+
+# Sortie de compilation serveur
+server.js
+server.cjs
