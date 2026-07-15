@@ -309,4 +309,4 @@ npm run start   # démarre le serveur de production
 
 Bonne installation ! 🍽️ En cas de blocage, relis la section **Dépannage** — 90 % des soucis viennent du `.env` ou de Firebase.
 
-> 📖 **Pour apprendre à utiliser l'application** (tous les écrans, de A à Z), ouvre le guide **`Guide-Utilisation-RestoPilote.docx`** fourni à la racine du projet.
+> 📖 **Pour apprendre à utiliser l'application** (tous les écrans, de A à Z), ouvre le guide **`Guide-Utilisation-RestoPilote.md`** fourni à la racine du projet.
