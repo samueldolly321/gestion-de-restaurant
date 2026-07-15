@@ -32,6 +32,22 @@ export const clients = pgTable('clients', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Define the 'assets' table (Biens & matériel du restaurant : mobilier, véhicules, équipement…)
+export const assets = pgTable('assets', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(), // ex. « Table ronde », « Moto livraison », « Télé Samsung »
+  category: text('category').notNull().default('autre'), // mobilier, electronique, vehicule, equipement, autre
+  quantity: integer('quantity').notNull().default(1), // nombre d'unités
+  condition: text('condition').notNull().default('bon'), // 'bon', 'moyen', 'a_reparer'
+  purchaseValue: doublePrecision('purchase_value').notNull().default(0.0), // valeur estimée (Ar), optionnel
+  photoUrl: text('photo_url'), // photo (URL ou base64) — utile pour moto/voiture/camionnette
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Define the 'personnel' table (Staff management)
 export const personnel = pgTable('personnel', {
   id: serial('id').primaryKey(),
@@ -50,6 +66,7 @@ export const personnel = pgTable('personnel', {
   hireDate: text('hire_date'),     // Date d'embauche
   avatarUrl: text('avatar_url'),   // Photo de profil de l'employé (URL ou base64)
   cvUrl: text('cv_url'),           // CV de l'employé (PDF ou image, URL ou base64)
+  vehicleId: integer('vehicle_id').references(() => assets.id, { onDelete: 'set null' }), // véhicule attaché (rôle livreur)
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -83,6 +100,9 @@ export const orders = pgTable('orders', {
   totalAmount: doublePrecision('total_amount').notNull().default(0.0),
   paymentMethod: text('payment_method').notNull().default('carte'), // 'carte', 'especes', 'mobile'
   serverName: text('server_name'), // Nom du serveur / serveuse ayant pris la commande
+  clientId: integer('client_id').references(() => clients.id, { onDelete: 'set null' }), // client (fidélité) ayant passé la commande
+  reference: text('reference'), // référence lisible auto (ex. « 15-04 » = 4e commande du 15)
+  deliveryFee: doublePrecision('delivery_fee').notNull().default(0.0), // frais de livraison (commande à livrer)
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -154,7 +174,44 @@ export const supplierOrders = pgTable('supplier_orders', {
   expenseId: integer('expense_id').references(() => expenses.id, { onDelete: 'set null' }), // dépense créée auto au paiement
   stockId: integer('stock_id').references(() => stocks.id, { onDelete: 'set null' }), // article de stock alimenté à la réception
   received: boolean('received').notNull().default(false), // marchandise reçue ?
-  stockApplied: boolean('stock_applied').notNull().default(false), // quantité déjà ajoutée au stock (garde-fou)
+  stockApplied: boolean('stock_applied').notNull().default(false), // garde-fou legacy (mono-article) — voir supplier_order_items
+  createdAt: timestamp('created_at').defaultNow(),
+  // ⚠️ Legacy (modèle mono-article) : label/quantity/unitPrice/stockId/stockApplied sont désormais portés
+  // par supplier_order_items. Conservés le temps de la migration ; amount = somme des lignes.
+});
+
+// Define the 'supplier_order_items' table (Lignes d'une commande fournisseur — modèle multi-articles)
+export const supplierOrderItems = pgTable('supplier_order_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  orderId: integer('order_id')
+    .references(() => supplierOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  label: text('label').notNull(), // produit commandé (ex. « Filet de calmar »)
+  quantity: doublePrecision('quantity').notNull().default(1.0), // quantité commandée
+  unitPrice: doublePrecision('unit_price').notNull().default(0.0), // prix unitaire (Ar)
+  amount: doublePrecision('amount').notNull().default(0.0), // total de la ligne = quantité × prix unitaire
+  stockId: integer('stock_id').references(() => stocks.id, { onDelete: 'set null' }), // article de stock alimenté à la réception
+  stockApplied: boolean('stock_applied').notNull().default(false), // quantité déjà ajoutée au stock (garde-fou par ligne)
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Define the 'supplier_products' table (Catalogue produits d'un fournisseur — prix courant)
+export const supplierProducts = pgTable('supplier_products', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  supplierId: integer('supplier_id')
+    .references(() => suppliers.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(), // nom du produit (ex. « Coca 1,5L »)
+  unitPrice: doublePrecision('unit_price').notNull().default(0.0), // prix COURANT (pré-remplissage) ; figé par ligne à la commande
+  unit: text('unit').notNull().default('pieces'), // unité (bouteille, kg, l, pièces…)
+  stockId: integer('stock_id').references(() => stocks.id, { onDelete: 'set null' }), // article de stock lié (optionnel)
+  active: boolean('active').notNull().default(true), // produit encore proposé ?
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -250,6 +307,7 @@ export const deliveries = pgTable('deliveries', {
   deliveryTime: text('delivery_time'), // Heure de livraison (HH:MM)
   orderId: integer('order_id').references(() => orders.id, { onDelete: 'set null' }), // Commande à livrer (numéro)
   driverName: text('driver_name'), // Nom du livreur (personnel de rôle 'livreur')
+  vehicleId: integer('vehicle_id').references(() => assets.id, { onDelete: 'set null' }), // véhicule ayant fait la livraison
   status: text('status').notNull().default('en_preparation'), // 'en_preparation', 'en_route', 'livree', 'annulee'
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
@@ -336,6 +394,13 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   items: many(orderItems),
 }));
 
+export const assetsRelations = relations(assets, ({ one }) => ({
+  user: one(users, {
+    fields: [assets.userId],
+    references: [users.id],
+  }),
+}));
+
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, {
     fields: [orderItems.orderId],
@@ -361,9 +426,25 @@ export const suppliersRelations = relations(suppliers, ({ one, many }) => ({
   }),
   stocks: many(stocks),
   supplierOrders: many(supplierOrders),
+  products: many(supplierProducts),
 }));
 
-export const supplierOrdersRelations = relations(supplierOrders, ({ one }) => ({
+export const supplierProductsRelations = relations(supplierProducts, ({ one }) => ({
+  user: one(users, {
+    fields: [supplierProducts.userId],
+    references: [users.id],
+  }),
+  supplier: one(suppliers, {
+    fields: [supplierProducts.supplierId],
+    references: [suppliers.id],
+  }),
+  stock: one(stocks, {
+    fields: [supplierProducts.stockId],
+    references: [stocks.id],
+  }),
+}));
+
+export const supplierOrdersRelations = relations(supplierOrders, ({ one, many }) => ({
   user: one(users, {
     fields: [supplierOrders.userId],
     references: [users.id],
@@ -371,6 +452,22 @@ export const supplierOrdersRelations = relations(supplierOrders, ({ one }) => ({
   supplier: one(suppliers, {
     fields: [supplierOrders.supplierId],
     references: [suppliers.id],
+  }),
+  items: many(supplierOrderItems),
+}));
+
+export const supplierOrderItemsRelations = relations(supplierOrderItems, ({ one }) => ({
+  user: one(users, {
+    fields: [supplierOrderItems.userId],
+    references: [users.id],
+  }),
+  order: one(supplierOrders, {
+    fields: [supplierOrderItems.orderId],
+    references: [supplierOrders.id],
+  }),
+  stock: one(stocks, {
+    fields: [supplierOrderItems.stockId],
+    references: [stocks.id],
   }),
 }));
 

@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
-import { Package, Truck, AlertTriangle, CheckCircle, Search, Plus, Edit2, Trash2, X, Utensils, History, ClipboardList } from 'lucide-react';
-import { Supplier, Stock, MenuItem, StockMovement, SupplierOrder } from '../types.ts';
+import { Package, Truck, AlertTriangle, CheckCircle, Search, Plus, Edit2, Trash2, X, Utensils, History, ClipboardList, ChevronDown, ChevronRight } from 'lucide-react';
+import { Supplier, Stock, MenuItem, StockMovement, SupplierOrder, SupplierProduct } from '../types.ts';
+
+// Une ligne du formulaire de commande fournisseur (modèle multi-articles).
+// stockId : id de l'article de stock lié, '' = aucun, '__new__' = créer un nouvel article.
+type OrderLine = { id?: number; label: string; quantity: number; unitPrice: number; stockId: string; newStockUnit: string };
+const emptyOrderLine = (): OrderLine => ({ label: '', quantity: 1, unitPrice: 0, stockId: '', newStockUnit: 'pieces' });
 
 interface InventoryManagerProps {
   stocks: Stock[];
@@ -8,6 +13,7 @@ interface InventoryManagerProps {
   menuItems: MenuItem[];
   stockMovements: StockMovement[];
   supplierOrders: SupplierOrder[];
+  supplierProducts: SupplierProduct[];
   onAddStock: (data: any) => Promise<void>;
   onEditStock: (id: number, data: any) => Promise<void>;
   onDeleteStock: (id: number) => Promise<void>;
@@ -17,6 +23,9 @@ interface InventoryManagerProps {
   onAddSupplier: (data: any) => Promise<void>;
   onEditSupplier: (id: number, data: any) => Promise<void>;
   onDeleteSupplier: (id: number) => Promise<void>;
+  onAddSupplierProduct: (data: any) => Promise<void>;
+  onEditSupplierProduct: (id: number, data: any) => Promise<void>;
+  onDeleteSupplierProduct: (id: number) => Promise<void>;
 }
 
 export default function InventoryManager({
@@ -25,6 +34,7 @@ export default function InventoryManager({
   menuItems,
   stockMovements,
   supplierOrders,
+  supplierProducts,
   onAddStock,
   onEditStock,
   onDeleteStock,
@@ -34,6 +44,9 @@ export default function InventoryManager({
   onAddSupplier,
   onEditSupplier,
   onDeleteSupplier,
+  onAddSupplierProduct,
+  onEditSupplierProduct,
+  onDeleteSupplierProduct,
 }: InventoryManagerProps) {
   const [activeSubTab, setActiveSubTab] = useState<'stocks' | 'suppliers' | 'orders'>('stocks');
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
@@ -83,18 +96,28 @@ export default function InventoryManager({
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<SupplierOrder | null>(null);
   const [orderSupplierId, setOrderSupplierId] = useState('');
-  const [orderLabel, setOrderLabel] = useState('');
-  const [orderQuantity, setOrderQuantity] = useState(1);
-  const [orderUnitPrice, setOrderUnitPrice] = useState(0);
   const [orderDate, setOrderDate] = useState('');
   const [orderPaymentStatus, setOrderPaymentStatus] = useState('en_attente');
   const [orderInvoiceNumber, setOrderInvoiceNumber] = useState('');
   const [orderInvoiceImageUrl, setOrderInvoiceImageUrl] = useState('');
   const [orderNote, setOrderNote] = useState('');
-  const [orderStockId, setOrderStockId] = useState(''); // article de stock alimenté a la reception ('__new__' = créer)
-  const [orderNewStockUnit, setOrderNewStockUnit] = useState('pieces'); // unité si nouvel article
   const [orderReceived, setOrderReceived] = useState(false);
   const [orderSupplierFilter, setOrderSupplierFilter] = useState(''); // filtre historique par fournisseur
+  const [stockDateFrom, setStockDateFrom] = useState(''); // filtre date d'ajout (stocks)
+  const [stockDateTo, setStockDateTo] = useState('');
+  const [orderDateFrom, setOrderDateFrom] = useState(''); // filtre date de commande
+  const [orderDateTo, setOrderDateTo] = useState('');
+
+  // Catalogue produits d'un fournisseur (Étape 1).
+  const [catalogSupplier, setCatalogSupplier] = useState<Supplier | null>(null);
+  const [editingProduct, setEditingProduct] = useState<SupplierProduct | null>(null);
+  const [prodName, setProdName] = useState('');
+  const [prodPrice, setProdPrice] = useState(0);
+  const [prodUnit, setProdUnit] = useState('pieces');
+  const [prodStockId, setProdStockId] = useState('');
+  // Lignes de la commande (modèle multi-articles). stockId/newStockUnit gérés par ligne.
+  const [orderLines, setOrderLines] = useState<OrderLine[]>([emptyOrderLine()]);
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null); // dépliant détail des lignes
 
   const supplierNameById = (id: number) => suppliers.find((s) => s.id === id)?.name || 'Fournisseur supprimé';
 
@@ -251,16 +274,12 @@ export default function InventoryManager({
   const openAddOrder = () => {
     setEditingOrder(null);
     setOrderSupplierId(suppliers[0] ? String(suppliers[0].id) : '');
-    setOrderLabel('');
-    setOrderQuantity(1);
-    setOrderUnitPrice(0);
+    setOrderLines([emptyOrderLine()]);
     setOrderDate(new Date().toISOString().split('T')[0]);
     setOrderPaymentStatus('en_attente');
     setOrderInvoiceNumber('');
     setOrderInvoiceImageUrl('');
     setOrderNote('');
-    setOrderStockId('');
-    setOrderNewStockUnit('pieces');
     setOrderReceived(false);
     setIsOrderModalOpen(true);
   };
@@ -268,19 +287,42 @@ export default function InventoryManager({
   const openEditOrder = (o: SupplierOrder) => {
     setEditingOrder(o);
     setOrderSupplierId(String(o.supplierId));
-    setOrderLabel(o.label);
-    setOrderQuantity(o.quantity ?? 1);
-    setOrderUnitPrice(o.unitPrice ?? 0);
+    const lines: OrderLine[] = (o.items || []).map((it) => ({
+      id: it.id,
+      label: it.label,
+      quantity: it.quantity ?? 1,
+      unitPrice: it.unitPrice ?? 0,
+      stockId: it.stockId != null ? String(it.stockId) : '',
+      newStockUnit: 'pieces',
+    }));
+    setOrderLines(lines.length ? lines : [emptyOrderLine()]);
     setOrderDate(o.orderDate || '');
     setOrderPaymentStatus(o.paymentStatus);
     setOrderInvoiceNumber(o.invoiceNumber || '');
     setOrderInvoiceImageUrl(o.invoiceImageUrl || '');
     setOrderNote(o.note || '');
-    setOrderStockId(o.stockId != null ? String(o.stockId) : '');
-    setOrderNewStockUnit('pieces');
     setOrderReceived(!!o.received);
     setIsOrderModalOpen(true);
   };
+
+  // Helpers de manipulation des lignes du formulaire.
+  const updateOrderLine = (index: number, patch: Partial<OrderLine>) =>
+    setOrderLines((lines) => lines.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  const addOrderLine = () => setOrderLines((lines) => [...lines, emptyOrderLine()]);
+  // Ajoute une ligne pré-remplie depuis un produit du catalogue (prix figé = snapshot, modifiable).
+  const addProductLine = (p: SupplierProduct) => {
+    const newLine: OrderLine = {
+      label: p.name,
+      quantity: 1,
+      unitPrice: p.unitPrice,
+      stockId: p.stockId != null ? String(p.stockId) : '',
+      newStockUnit: p.unit || 'pieces',
+    };
+    setOrderLines((lines) => (lines.length === 1 && !lines[0].label.trim() ? [newLine] : [...lines, newLine]));
+  };
+  const removeOrderLine = (index: number) =>
+    setOrderLines((lines) => (lines.length > 1 ? lines.filter((_, i) => i !== index) : lines));
+  const orderLinesTotal = orderLines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0);
 
   const handleOrderInvoiceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -293,19 +335,24 @@ export default function InventoryManager({
 
   const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orderSupplierId || !orderLabel) return;
+    const validLines = orderLines.filter((l) => l.label.trim());
+    if (!orderSupplierId || validLines.length === 0) return;
+    const items = validLines.map((l) => ({
+      id: l.id, // présent pour les lignes existantes (préserve le garde-fou stock côté serveur)
+      label: l.label.trim(),
+      quantity: Number(l.quantity) || 0,
+      unitPrice: Number(l.unitPrice) || 0,
+      stockId: (l.stockId && l.stockId !== '__new__') ? Number(l.stockId) : null,
+      newStockUnit: l.stockId === '__new__' ? l.newStockUnit : null,
+    }));
     const payload = {
       supplierId: Number(orderSupplierId),
-      label: orderLabel,
-      quantity: Number(orderQuantity),
-      unitPrice: Number(orderUnitPrice),
+      items,
       orderDate: orderDate || null,
       paymentStatus: orderPaymentStatus,
       invoiceNumber: orderInvoiceNumber || null,
       invoiceImageUrl: orderInvoiceImageUrl || null,
       note: orderNote || null,
-      stockId: (orderStockId && orderStockId !== '__new__') ? Number(orderStockId) : null,
-      newStockUnit: orderStockId === '__new__' ? orderNewStockUnit : null,
       received: orderReceived,
     };
     if (editingOrder) {
@@ -321,9 +368,76 @@ export default function InventoryManager({
     await onEditSupplierOrder(o.id, { received: true });
   };
 
-  const filteredStocks = stocks.filter((s) =>
-    s.itemName.toLowerCase().includes(searchQuery.toLowerCase())
+  // --- Catalogue produits d'un fournisseur ---
+  const productsBySupplier = (supplierId: number) =>
+    supplierProducts.filter((p) => p.supplierId === supplierId);
+
+  const resetProdForm = () => {
+    setEditingProduct(null);
+    setProdName('');
+    setProdPrice(0);
+    setProdUnit('pieces');
+    setProdStockId('');
+  };
+
+  const openCatalog = (sup: Supplier) => {
+    setCatalogSupplier(sup);
+    resetProdForm();
+  };
+
+  const startEditProduct = (p: SupplierProduct) => {
+    setEditingProduct(p);
+    setProdName(p.name);
+    setProdPrice(p.unitPrice);
+    setProdUnit(p.unit);
+    setProdStockId(p.stockId != null ? String(p.stockId) : '');
+  };
+
+  const handleProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catalogSupplier || !prodName.trim()) return;
+    const payload = {
+      supplierId: catalogSupplier.id,
+      name: prodName.trim(),
+      unitPrice: Number(prodPrice) || 0,
+      unit: prodUnit,
+      stockId: (prodStockId && prodStockId !== '__new__') ? Number(prodStockId) : null,
+      // Option « Autre » : crée un nouvel article de stock (unité = celle du produit) et le lie.
+      newStockUnit: prodStockId === '__new__' ? prodUnit : null,
+    };
+    if (editingProduct) {
+      await onEditSupplierProduct(editingProduct.id, payload);
+    } else {
+      await onAddSupplierProduct(payload);
+    }
+    resetProdForm();
+  };
+
+  // Ensemble des articles ayant eu un mouvement (appro/correction) dans la période choisie.
+  // Permet de filtrer par « activité » et pas seulement par date de création de l'article.
+  const stockIdsWithMovementInRange = new Set(
+    (stockDateFrom || stockDateTo)
+      ? stockMovements
+          .filter((m) => {
+            const d = (m.createdAt || '').slice(0, 10);
+            return (!stockDateFrom || d >= stockDateFrom) && (!stockDateTo || d <= stockDateTo);
+          })
+          .map((m) => m.stockId)
+      : []
   );
+
+  // Recherche stock : par nom d'article OU par nom du fournisseur (ex. « Star »),
+  // + filtre date = création de l'article OU approvisionnement dans la période.
+  const filteredStocks = stocks.filter((s) => {
+    const q = searchQuery.toLowerCase();
+    const supName = s.supplierId != null ? supplierNameById(s.supplierId).toLowerCase() : '';
+    const matchText = !q || s.itemName.toLowerCase().includes(q) || supName.includes(q);
+    const created = (s.createdAt || '').slice(0, 10);
+    const createdInRange = (!stockDateFrom || created >= stockDateFrom) && (!stockDateTo || created <= stockDateTo);
+    const hasDateFilter = !!(stockDateFrom || stockDateTo);
+    const matchDate = !hasDateFilter || createdInRange || stockIdsWithMovementInRange.has(s.id);
+    return matchText && matchDate;
+  });
 
   const filteredSuppliers = suppliers.filter((sup) =>
     sup.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -397,15 +511,31 @@ export default function InventoryManager({
 
       {/* Filter and Search Box (stocks & fournisseurs) */}
       {activeSubTab !== 'orders' && (
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-3xs flex items-center gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-3xs flex flex-wrap items-center gap-3">
           <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             type="text"
-            placeholder={activeSubTab === 'stocks' ? "Rechercher dans le stock..." : "Rechercher un fournisseur..."}
+            placeholder={activeSubTab === 'stocks' ? "Rechercher un article ou un fournisseur (ex. Star)..." : "Rechercher un fournisseur..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-slate-800 text-xs focus:outline-none placeholder-slate-400"
+            className="flex-1 min-w-[180px] bg-transparent text-slate-800 text-xs focus:outline-none placeholder-slate-400"
           />
+          {activeSubTab === 'stocks' && (
+            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+              <span className="uppercase tracking-wider">Activité du</span>
+              <input type="date" value={stockDateFrom} onChange={(e) => setStockDateFrom(e.target.value)}
+                className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:ring-1 focus:ring-red-500 font-mono" />
+              <span className="uppercase tracking-wider">au</span>
+              <input type="date" value={stockDateTo} onChange={(e) => setStockDateTo(e.target.value)}
+                className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:ring-1 focus:ring-red-500 font-mono" />
+              {(stockDateFrom || stockDateTo) && (
+                <button type="button" onClick={() => { setStockDateFrom(''); setStockDateTo(''); }}
+                  className="p-1 text-slate-300 hover:text-red-600 cursor-pointer" title="Réinitialiser les dates">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -591,12 +721,20 @@ export default function InventoryManager({
                 </div>
 
                 <div className="flex items-center justify-between mt-4 border-t border-slate-50 pt-2">
-                  <button
-                    onClick={() => { setOrderSupplierFilter(String(sup.id)); setActiveSubTab('orders'); }}
-                    className="text-[10px] font-bold text-red-600 hover:text-red-500 flex items-center gap-1 cursor-pointer"
-                  >
-                    <ClipboardList className="w-3 h-3" /> Voir les commandes
-                  </button>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => { setOrderSupplierFilter(String(sup.id)); setActiveSubTab('orders'); }}
+                      className="text-[10px] font-bold text-red-600 hover:text-red-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      <ClipboardList className="w-3 h-3" /> Voir les commandes
+                    </button>
+                    <button
+                      onClick={() => openCatalog(sup)}
+                      className="text-[10px] font-bold text-blue-600 hover:text-blue-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Package className="w-3 h-3" /> Catalogue ({productsBySupplier(sup.id).length})
+                    </button>
+                  </div>
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEditSupplier(sup)}
@@ -622,7 +760,7 @@ export default function InventoryManager({
       {/* SUB-TAB 3: COMMANDES FOURNISSEUR (historique) */}
       {activeSubTab === 'orders' && (
         <div className="space-y-4">
-          {/* Filtre par fournisseur */}
+          {/* Filtres : fournisseur + date de commande */}
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-3xs flex flex-wrap items-center gap-3">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Fournisseur :</span>
             <select
@@ -635,11 +773,27 @@ export default function InventoryManager({
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider ml-2">Du</span>
+            <input type="date" value={orderDateFrom} onChange={(e) => setOrderDateFrom(e.target.value)}
+              className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-1 focus:ring-red-500 font-mono" />
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">au</span>
+            <input type="date" value={orderDateTo} onChange={(e) => setOrderDateTo(e.target.value)}
+              className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-1 focus:ring-red-500 font-mono" />
+            {(orderDateFrom || orderDateTo) && (
+              <button type="button" onClick={() => { setOrderDateFrom(''); setOrderDateTo(''); }}
+                className="p-1 text-slate-300 hover:text-red-600 cursor-pointer" title="Réinitialiser les dates">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {(() => {
             const rows = supplierOrders
               .filter((o) => !orderSupplierFilter || o.supplierId === Number(orderSupplierFilter))
+              .filter((o) => {
+                const d = o.orderDate || (o.createdAt || '').slice(0, 10);
+                return (!orderDateFrom || d >= orderDateFrom) && (!orderDateTo || d <= orderDateTo);
+              })
               .sort((a, b) => (b.orderDate || b.createdAt || '').localeCompare(a.orderDate || a.createdAt || ''));
             const totalOrdered = rows.reduce((s, o) => s + (o.amount || 0), 0);
             const totalDue = rows.filter((o) => o.paymentStatus !== 'paye').reduce((s, o) => s + (o.amount || 0), 0);
@@ -685,12 +839,26 @@ export default function InventoryManager({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 text-xs text-slate-700">
-                        {rows.map((o) => (
-                          <tr key={o.id} className="hover:bg-slate-50/50 transition-colors">
+                        {rows.map((o) => {
+                          const items = o.items || [];
+                          const hasStockLink = items.some((it) => it.stockId != null);
+                          const isExpanded = expandedOrderId === o.id;
+                          return (
+                          <React.Fragment key={o.id}>
+                          <tr className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-3.5 px-6 font-mono text-slate-400">{o.orderDate || '—'}</td>
                             <td className="py-3.5 px-6 font-semibold text-slate-700">{supplierNameById(o.supplierId)}</td>
                             <td className="py-3.5 px-6">
-                              <p className="font-bold text-slate-800">{o.label}</p>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedOrderId(isExpanded ? null : o.id)}
+                                className="flex items-center gap-1 font-bold text-slate-800 hover:text-red-600 cursor-pointer text-left"
+                                title={isExpanded ? 'Masquer le détail' : 'Voir le détail des articles'}
+                              >
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
+                                <span>{o.label}</span>
+                                <span className="ml-1 text-[9px] font-bold text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5">{items.length} art.</span>
+                              </button>
                               {o.note && <p className="text-[10px] text-slate-400 italic mt-0.5">{o.note}</p>}
                             </td>
                             <td className="py-3.5 px-6">
@@ -704,7 +872,6 @@ export default function InventoryManager({
                             </td>
                             <td className="py-3.5 px-6 text-right font-mono font-black text-slate-900">
                               {formatAr(o.amount || 0)}
-                              <span className="block text-[9px] font-normal text-slate-400">{o.quantity} × {formatAr(o.unitPrice || 0)}</span>
                             </td>
                             <td className="py-3.5 px-6 text-center">
                               <span className={`inline-block text-[9px] px-2 py-0.5 rounded-full border font-bold uppercase ${
@@ -717,7 +884,7 @@ export default function InventoryManager({
                             </td>
                             <td className="py-3.5 px-6">
                               <div className="flex items-center justify-center gap-1">
-                                {o.stockId != null && (
+                                {hasStockLink && (
                                   o.received ? (
                                     <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold uppercase mr-1" title="Marchandise reçue, stock alimenté">
                                       <CheckCircle className="w-2.5 h-2.5" /> Reçue
@@ -737,7 +904,45 @@ export default function InventoryManager({
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/60">
+                              <td colSpan={6} className="px-6 py-3">
+                                <div className="rounded-xl border border-slate-100 overflow-hidden">
+                                  <table className="w-full text-[11px]">
+                                    <thead className="bg-slate-100 text-slate-500 uppercase text-[9px]">
+                                      <tr>
+                                        <th className="py-1.5 px-3 text-left">Article</th>
+                                        <th className="py-1.5 px-3 text-center">Qté</th>
+                                        <th className="py-1.5 px-3 text-right">P.U.</th>
+                                        <th className="py-1.5 px-3 text-right">Total</th>
+                                        <th className="py-1.5 px-3 text-center">Stock lié</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {items.map((it) => (
+                                        <tr key={it.id}>
+                                          <td className="py-1.5 px-3 font-semibold text-slate-700">{it.label}</td>
+                                          <td className="py-1.5 px-3 text-center font-mono">{it.quantity}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono">{formatAr(it.unitPrice || 0)}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono font-bold">{formatAr(it.amount || 0)}</td>
+                                          <td className="py-1.5 px-3 text-center">
+                                            {it.stockId != null ? (
+                                              <span className="text-[9px] text-slate-600">{stocks.find((s) => s.id === it.stockId)?.itemName || `#${it.stockId}`}{it.stockApplied ? ' ✓' : ''}</span>
+                                            ) : (
+                                              <span className="text-slate-300">—</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1074,58 +1279,121 @@ export default function InventoryManager({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Objet de la commande *</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date</label>
                 <input
-                  type="text"
-                  required
-                  value={orderLabel}
-                  onChange={(e) => setOrderLabel(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500"
-                  placeholder="Ex. Filet de calmar 6 kg + crevettes 3 kg"
+                  type="date"
+                  value={orderDate}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 font-mono"
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quantité *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={orderQuantity}
-                    onChange={(e) => setOrderQuantity(Number(e.target.value))}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 font-mono"
-                    placeholder="Ex. 6"
-                  />
+              {/* Catalogue du fournisseur : puces cliquables pour pré-remplir une ligne (Étape 2) */}
+              {orderSupplierId && productsBySupplier(Number(orderSupplierId)).length > 0 && (
+                <div className="bg-blue-50/40 border border-blue-100 rounded-xl p-3">
+                  <label className="block text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Package className="w-3 h-3" /> Catalogue — cliquer pour ajouter
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {productsBySupplier(Number(orderSupplierId)).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addProductLine(p)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-blue-200 rounded-lg text-[11px] text-slate-700 hover:bg-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
+                        title={`Ajouter ${p.name} (${formatAr(p.unitPrice)}/${p.unit})`}
+                      >
+                        <Plus className="w-3 h-3 text-blue-600" />
+                        <span className="font-semibold">{p.name}</span>
+                        <span className="font-mono text-slate-400">{formatAr(p.unitPrice)}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Prix unitaire (Ar) *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={orderUnitPrice}
-                    onChange={(e) => setOrderUnitPrice(Number(e.target.value))}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 font-mono"
-                    placeholder="Ex. 22000"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={orderDate}
-                    onChange={(e) => setOrderDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 font-mono"
-                  />
-                </div>
+              )}
+
+              {/* Lignes de la commande (multi-articles) */}
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Articles commandés *</label>
+                {orderLines.map((line, i) => {
+                  const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
+                  return (
+                    <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-300 w-4 shrink-0">#{i + 1}</span>
+                        <input
+                          type="text"
+                          value={line.label}
+                          onChange={(e) => updateOrderLine(i, { label: e.target.value })}
+                          className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500"
+                          placeholder="Article (ex. Filet de calmar)"
+                        />
+                        {orderLines.length > 1 && (
+                          <button type="button" onClick={() => removeOrderLine(i)} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer shrink-0" title="Retirer cet article">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pl-6">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Quantité</label>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={line.quantity}
+                            onChange={(e) => updateOrderLine(i, { quantity: Number(e.target.value) })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 font-mono"
+                            placeholder="Ex. 6"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Prix unitaire (Ar)</label>
+                          <input
+                            type="number" min="0"
+                            value={line.unitPrice}
+                            onChange={(e) => updateOrderLine(i, { unitPrice: Number(e.target.value) })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-red-500 font-mono"
+                            placeholder="Ex. 22000"
+                          />
+                        </div>
+                      </div>
+                      <div className="pl-6 space-y-2">
+                        <select
+                          value={line.stockId}
+                          onChange={(e) => updateOrderLine(i, { stockId: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 text-slate-800 cursor-pointer"
+                        >
+                          <option value="">— Aucun stock lié —</option>
+                          <option value="__new__">➕ Créer un article de stock (« {line.label || 'cet article'} »)</option>
+                          {stocks.map((s) => (
+                            <option key={s.id} value={s.id}>{s.itemName} ({s.unit})</option>
+                          ))}
+                        </select>
+                        {line.stockId === '__new__' && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-semibold">Unité :</span>
+                            <select value={line.newStockUnit} onChange={(e) => updateOrderLine(i, { newStockUnit: e.target.value })}
+                              className="px-2 py-1 bg-white border border-blue-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                              <option value="pieces">Pièces</option>
+                              <option value="bouteilles">Bouteilles</option>
+                              <option value="kg">kg</option>
+                              <option value="l">Litre (l)</option>
+                            </select>
+                          </div>
+                        )}
+                        <div className="text-right text-[10px] text-slate-500 font-mono">Sous-total : <b className="text-slate-700">{formatAr(lineTotal)}</b></div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <button type="button" onClick={addOrderLine} className="w-full py-2 border border-dashed border-red-200 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 cursor-pointer flex items-center justify-center gap-1">
+                  <Plus className="w-3.5 h-3.5" /> Ajouter un article
+                </button>
               </div>
 
               {/* Montant total calculé */}
               <div className="flex items-center justify-between bg-red-50/60 border border-red-100 rounded-xl px-4 py-2.5">
                 <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Montant total (auto)</span>
-                <span className="text-base font-black text-red-600 font-mono">{formatAr(Number(orderQuantity) * Number(orderUnitPrice))}</span>
+                <span className="text-base font-black text-red-600 font-mono">{formatAr(orderLinesTotal)}</span>
               </div>
 
               <div>
@@ -1189,43 +1457,17 @@ export default function InventoryManager({
                 />
               </div>
 
-              {/* Lien vers le stock + réception (Option ①) */}
-              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 space-y-2">
-                <label className="block text-[10px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
-                  <Package className="w-3 h-3" /> Alimenter le stock (facultatif)
-                </label>
-                <select
-                  value={orderStockId}
-                  onChange={(e) => setOrderStockId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-blue-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 text-slate-800 cursor-pointer"
-                >
-                  <option value="">— Aucun article de stock lié —</option>
-                  <option value="__new__">➕ Créer un nouvel article de stock (« {orderLabel || 'objet de la commande'} »)</option>
-                  {stocks.map((s) => (
-                    <option key={s.id} value={s.id}>{s.itemName} ({s.unit})</option>
-                  ))}
-                </select>
-                {orderStockId === '__new__' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-500 font-semibold">Unité du nouvel article :</span>
-                    <select value={orderNewStockUnit} onChange={(e) => setOrderNewStockUnit(e.target.value)}
-                      className="px-2 py-1.5 bg-white border border-blue-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
-                      <option value="pieces">Pièces</option>
-                      <option value="bouteilles">Bouteilles</option>
-                      <option value="kg">kg</option>
-                      <option value="l">Litre (l)</option>
-                    </select>
-                  </div>
-                )}
-                {orderStockId && (
+              {/* Réception globale : alimente le stock de toutes les lignes liées */}
+              {orderLines.some((l) => l.stockId) && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 space-y-1.5">
                   <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
                     <input type="checkbox" checked={orderReceived} onChange={(e) => setOrderReceived(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300" />
-                    Marchandise <b>reçue</b> → ajouter <b>{orderQuantity}</b> au stock
-                    {editingOrder?.stockApplied && <span className="text-[9px] text-emerald-600 font-bold">(déjà ajouté)</span>}
+                    <Package className="w-3.5 h-3.5 text-blue-600" />
+                    Marchandise <b>reçue</b> → alimenter le stock de toutes les lignes liées
                   </label>
-                )}
-                <p className="text-[9px] text-slate-400">À la réception : +quantité au stock, mouvement d'historique daté, et mise à jour du coût unitaire.</p>
-              </div>
+                  <p className="text-[9px] text-slate-400 pl-6">À la réception : +quantité au stock de chaque ligne liée, mouvement d'historique daté, mise à jour du coût unitaire. Idempotent (une seule fois par ligne).</p>
+                </div>
+              )}
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button type="button" onClick={() => setIsOrderModalOpen(false)} className="px-4 py-2 border rounded-xl text-xs font-semibold text-slate-600">
@@ -1284,6 +1526,117 @@ export default function InventoryManager({
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: CATALOGUE PRODUITS D'UN FOURNISSEUR (Étape 1) */}
+      {catalogSupplier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 text-left max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between sticky top-0 z-10">
+              <h3 className="font-display font-bold text-slate-900 flex items-center gap-2">
+                <Package className="w-4 h-4 text-blue-600" />
+                Catalogue — {catalogSupplier.name}
+              </h3>
+              <button onClick={() => { setCatalogSupplier(null); resetProdForm(); }} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Formulaire ajout / édition produit */}
+              <form onSubmit={handleProductSubmit} className="bg-slate-50/60 border border-slate-100 rounded-2xl p-4 space-y-3">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {editingProduct ? 'Modifier le produit' : 'Ajouter un produit au catalogue'}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                  <input
+                    type="text" required value={prodName}
+                    onChange={(e) => setProdName(e.target.value)}
+                    placeholder="Nom du produit (ex. Coca 1,5L)"
+                    className="sm:col-span-3 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input
+                    type="number" min="0" value={prodPrice}
+                    onChange={(e) => setProdPrice(Number(e.target.value))}
+                    placeholder="Prix (Ar)"
+                    className="sm:col-span-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                  <select value={prodUnit} onChange={(e) => setProdUnit(e.target.value)}
+                    className="px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                    <option value="pieces">Pièces</option>
+                    <option value="bouteilles">Bouteille</option>
+                    <option value="kg">kg</option>
+                    <option value="l">Litre</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500 font-semibold shrink-0">Stock lié (option) :</span>
+                  <select value={prodStockId} onChange={(e) => setProdStockId(e.target.value)}
+                    className="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                    <option value="">— Aucun —</option>
+                    <option value="__new__">➕ Autre : créer un nouvel article de stock (« {prodName || 'ce produit'} »)</option>
+                    {stocks.map((s) => (
+                      <option key={s.id} value={s.id}>{s.itemName} ({s.unit})</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shrink-0">
+                    {editingProduct ? 'Enregistrer' : 'Ajouter'}
+                  </button>
+                  {editingProduct && (
+                    <button type="button" onClick={resetProdForm} className="px-3 py-1.5 border rounded-lg text-xs font-semibold text-slate-500 shrink-0">
+                      Annuler
+                    </button>
+                  )}
+                </div>
+                {prodStockId === '__new__' && (
+                  <p className="text-[9px] text-blue-600">Un article de stock « {prodName || 'ce produit'} » sera créé (unité : <b>{prodUnit}</b>, quantité 0) et lié à ce produit.</p>
+                )}
+              </form>
+
+              {/* Liste des produits du fournisseur */}
+              {productsBySupplier(catalogSupplier.id).length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-8">Aucun produit dans ce catalogue. Ajoutes-en un ci-dessus.</p>
+              ) : (
+                <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-400 uppercase text-[9px]">
+                      <tr>
+                        <th className="py-2 px-3 text-left">Produit</th>
+                        <th className="py-2 px-3 text-right">Prix courant</th>
+                        <th className="py-2 px-3 text-center">Unité</th>
+                        <th className="py-2 px-3 text-left">Stock lié</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {productsBySupplier(catalogSupplier.id).map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50/50">
+                          <td className="py-2 px-3 font-semibold text-slate-700">{p.name}</td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatAr(p.unitPrice || 0)}</td>
+                          <td className="py-2 px-3 text-center text-slate-500">{p.unit}</td>
+                          <td className="py-2 px-3 text-slate-500">
+                            {p.stockId != null ? (stocks.find((s) => s.id === p.stockId)?.itemName || `#${p.stockId}`) : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => startEditProduct(p)} className="p-1.5 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg cursor-pointer" title="Modifier">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => { if (confirm('Retirer ce produit du catalogue ?')) onDeleteSupplierProduct(p.id); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer" title="Supprimer">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="text-[9px] text-slate-400">💡 Le prix ici est le <b>prix courant</b> (pré-remplissage). Le modifier n'affecte <b>pas</b> les commandes déjà passées (chaque commande garde son prix figé).</p>
             </div>
           </div>
         </div>

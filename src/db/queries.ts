@@ -1,6 +1,6 @@
 import { db } from './index.ts';
-import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents } from './schema.ts';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets } from './schema.ts';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 
 // Helper to sanitize database errors and log them securely
 function handleDbError(message: string, error: any): never {
@@ -158,6 +158,19 @@ export async function updateClient(
   }
 }
 
+// Incrémente (ou décrémente) les points de fidélité d'un client de façon atomique.
+export async function incrementClientLoyalty(clientId: number, dbUserId: number, delta: number) {
+  try {
+    const result = await db.update(clients)
+      .set({ loyaltyPoints: sql`GREATEST(0, ${clients.loyaltyPoints} + ${delta})` })
+      .where(and(eq(clients.id, clientId), eq(clients.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update client loyalty points", error);
+  }
+}
+
 export async function deleteClient(clientId: number, dbUserId: number) {
   try {
     const result = await db.delete(clients)
@@ -195,7 +208,8 @@ export async function createPersonnel(
   leaveEnd?: string | null,
   hireDate?: string | null,
   avatarUrl?: string | null,
-  cvUrl?: string | null
+  cvUrl?: string | null,
+  vehicleId?: number | null
 ) {
   try {
     const result = await db.insert(personnel)
@@ -213,6 +227,7 @@ export async function createPersonnel(
         hireDate: hireDate || null,
         avatarUrl: avatarUrl || null,
         cvUrl: cvUrl || null,
+        vehicleId: vehicleId ?? null,
       })
       .returning();
     return result[0];
@@ -237,6 +252,7 @@ export async function updatePersonnel(
     hireDate?: string | null;
     avatarUrl?: string | null;
     cvUrl?: string | null;
+    vehicleId?: number | null;
   }
 ) {
   try {
@@ -397,13 +413,17 @@ export async function createOrder(
   items: OrderItemInput[] = [],
   serverName: string | null = null,
   orderType = 'sur_place',
-  taxRate = 0
+  taxRate = 0,
+  clientId: number | null = null,
+  reference: string | null = null,
+  deliveryFee = 0
 ) {
   try {
-    // L'addition est TOUJOURS recalculée côté serveur à partir des lignes.
-    const totalAmount = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+    // L'addition (plats) est recalculée côté serveur ; le total inclut les frais de livraison.
+    const itemsSum = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+    const totalAmount = itemsSum + (deliveryFee || 0);
     const result = await db.insert(orders)
-      .values({ userId: dbUserId, tableNumber, status, totalAmount, paymentMethod, serverName, orderType, taxRate })
+      .values({ userId: dbUserId, tableNumber, status, totalAmount, paymentMethod, serverName, orderType, taxRate, clientId, reference, deliveryFee })
       .returning();
     const order = result[0];
     if (items.length > 0) {
@@ -432,6 +452,8 @@ export async function updateOrder(
     serverName?: string | null;
     orderType?: string;
     taxRate?: number;
+    clientId?: number | null;
+    deliveryFee?: number;
     items?: OrderItemInput[];
   }
 ) {
@@ -444,8 +466,17 @@ export async function updateOrder(
     if (updates.serverName !== undefined) setFields.serverName = updates.serverName;
     if (updates.orderType !== undefined) setFields.orderType = updates.orderType;
     if (updates.taxRate !== undefined) setFields.taxRate = updates.taxRate;
+    if (updates.clientId !== undefined) setFields.clientId = updates.clientId;
+    if (updates.deliveryFee !== undefined) setFields.deliveryFee = updates.deliveryFee;
+    // Le total est recalculé si les lignes changent : addition (plats) + frais de livraison.
     if (updates.items !== undefined) {
-      setFields.totalAmount = updates.items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+      const itemsSum = updates.items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+      let fee = updates.deliveryFee;
+      if (fee === undefined) {
+        const cur = (await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, dbUserId))))[0];
+        fee = cur?.deliveryFee || 0;
+      }
+      setFields.totalAmount = itemsSum + (fee || 0);
     }
 
     const result = await db.update(orders)
@@ -649,12 +680,45 @@ export async function deleteSupplier(supplierId: number, dbUserId: number) {
 
 // --- SUPPLIER ORDERS CRUD (commandes passées aux fournisseurs) ---
 
+// Type d'une ligne de commande fournisseur (entrée depuis l'API).
+export type SupplierOrderItemInput = {
+  label: string;
+  quantity?: number;
+  unitPrice?: number;
+  stockId?: number | null;
+  stockApplied?: boolean;
+};
+
+// Libellé résumé de l'en-tête (utilisé pour la dépense auto et l'affichage legacy).
+function summarizeItems(items: SupplierOrderItemInput[]): string {
+  if (!items.length) return 'Commande';
+  if (items.length === 1) return items[0].label;
+  return `${items[0].label} +${items.length - 1} article(s)`;
+}
+
+// Rattache les lignes à une liste d'en-têtes (renvoie chaque commande avec son tableau `items`).
+async function attachItems<T extends { id: number }>(orders: T[]) {
+  if (!orders.length) return orders.map((o) => ({ ...o, items: [] as any[] }));
+  const ids = orders.map((o) => o.id);
+  const items = await db.select().from(supplierOrderItems)
+    .where(inArray(supplierOrderItems.orderId, ids))
+    .orderBy(supplierOrderItems.id);
+  const byOrder = new Map<number, any[]>();
+  for (const it of items) {
+    const arr = byOrder.get(it.orderId) || [];
+    arr.push(it);
+    byOrder.set(it.orderId, arr);
+  }
+  return orders.map((o) => ({ ...o, items: byOrder.get(o.id) || [] }));
+}
+
 export async function getSupplierOrders(dbUserId: number) {
   try {
-    return await db.select()
+    const rows = await db.select()
       .from(supplierOrders)
       .where(eq(supplierOrders.userId, dbUserId))
       .orderBy(desc(supplierOrders.orderDate), desc(supplierOrders.createdAt));
+    return await attachItems(rows);
   } catch (error) {
     handleDbError("Failed to fetch supplier orders", error);
   }
@@ -664,87 +728,201 @@ export async function getSupplierOrderById(orderId: number, dbUserId: number) {
   try {
     const rows = await db.select().from(supplierOrders)
       .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)));
-    return rows[0];
+    if (!rows[0]) return undefined;
+    return (await attachItems(rows))[0];
   } catch (error) {
     handleDbError("Failed to fetch supplier order", error);
   }
 }
 
+// Écrit les lignes d'une commande (remplacement complet) et renvoie le montant total.
+// À appeler dans une transaction. `tx` est le client Drizzle (transaction ou db).
+async function writeItems(tx: any, dbUserId: number, orderId: number, items: SupplierOrderItemInput[]) {
+  await tx.delete(supplierOrderItems).where(eq(supplierOrderItems.orderId, orderId));
+  let total = 0;
+  for (const it of items) {
+    const quantity = Number(it.quantity) || 0;
+    const unitPrice = Number(it.unitPrice) || 0;
+    const amount = quantity * unitPrice;
+    total += amount;
+    await tx.insert(supplierOrderItems).values({
+      userId: dbUserId,
+      orderId,
+      label: it.label,
+      quantity,
+      unitPrice,
+      amount,
+      stockId: it.stockId ?? null,
+      stockApplied: !!it.stockApplied,
+    });
+  }
+  return total;
+}
+
 export async function createSupplierOrder(
   dbUserId: number,
   supplierId: number,
-  label: string,
-  quantity = 1.0,
-  unitPrice = 0.0,
+  items: SupplierOrderItemInput[],
   orderDate: string | null = null,
   paymentStatus = 'en_attente',
   invoiceNumber: string | null = null,
   invoiceImageUrl: string | null = null,
   note: string | null = null,
-  stockId: number | null = null,
   received = false
 ) {
   try {
-    const amount = quantity * unitPrice; // le montant total est toujours recalculé
-    const result = await db.insert(supplierOrders)
-      .values({ userId: dbUserId, supplierId, label, quantity, unitPrice, amount, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received })
-      .returning();
-    return result[0];
+    return await db.transaction(async (tx) => {
+      const inserted = await tx.insert(supplierOrders)
+        .values({
+          userId: dbUserId, supplierId, label: summarizeItems(items),
+          amount: 0, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received,
+        })
+        .returning();
+      const order = inserted[0];
+      const total = await writeItems(tx, dbUserId, order.id, items);
+      const updated = await tx.update(supplierOrders)
+        .set({ amount: total, label: summarizeItems(items) })
+        .where(eq(supplierOrders.id, order.id))
+        .returning();
+      return updated[0];
+    });
   } catch (error) {
     handleDbError("Failed to create supplier order", error);
   }
 }
 
+// Met à jour l'en-tête d'une commande. Si `items` est fourni, remplace aussi les lignes
+// et recalcule le montant total. Utilisé pour l'édition mais aussi pour les mises à jour
+// partielles serveur (expenseId, paymentStatus, received…).
 export async function updateSupplierOrder(
   orderId: number,
   dbUserId: number,
   updates: {
     supplierId?: number;
-    label?: string;
-    quantity?: number;
-    unitPrice?: number;
-    amount?: number;
     orderDate?: string | null;
     paymentStatus?: string;
     invoiceNumber?: string | null;
     invoiceImageUrl?: string | null;
     note?: string | null;
     expenseId?: number | null;
-    stockId?: number | null;
     received?: boolean;
-    stockApplied?: boolean;
+    items?: SupplierOrderItemInput[];
   }
 ) {
   try {
-    // Si quantité et/ou prix unitaire changent, on recalcule le montant total.
-    const setFields: any = { ...updates };
-    if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
-      const current = (await db.select().from(supplierOrders)
+    const { items, ...headerUpdates } = updates;
+    return await db.transaction(async (tx) => {
+      // Garde-fou de propriété : la commande doit appartenir à l'utilisateur.
+      const current = (await tx.select().from(supplierOrders)
         .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId))))[0];
-      if (current) {
-        const q = updates.quantity !== undefined ? updates.quantity : current.quantity;
-        const u = updates.unitPrice !== undefined ? updates.unitPrice : current.unitPrice;
-        setFields.amount = q * u;
+      if (!current) return undefined;
+
+      const setFields: any = { ...headerUpdates };
+      if (items !== undefined) {
+        const total = await writeItems(tx, dbUserId, orderId, items);
+        setFields.amount = total;
+        setFields.label = summarizeItems(items);
       }
-    }
-    const result = await db.update(supplierOrders)
-      .set(setFields)
-      .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)))
-      .returning();
-    return result[0];
+      if (Object.keys(setFields).length === 0) return current;
+      const result = await tx.update(supplierOrders)
+        .set(setFields)
+        .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)))
+        .returning();
+      return result[0];
+    });
   } catch (error) {
     handleDbError("Failed to update supplier order", error);
   }
 }
 
+// Marque une ligne comme appliquée au stock (garde-fou d'idempotence à la réception).
+export async function markSupplierOrderItemApplied(itemId: number, dbUserId: number) {
+  try {
+    const result = await db.update(supplierOrderItems)
+      .set({ stockApplied: true })
+      .where(and(eq(supplierOrderItems.id, itemId), eq(supplierOrderItems.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to mark supplier order item applied", error);
+  }
+}
+
 export async function deleteSupplierOrder(orderId: number, dbUserId: number) {
   try {
+    // Les lignes (supplier_order_items) sont supprimées en cascade (FK onDelete cascade).
     const result = await db.delete(supplierOrders)
       .where(and(eq(supplierOrders.id, orderId), eq(supplierOrders.userId, dbUserId)))
       .returning();
     return result[0];
   } catch (error) {
     handleDbError("Failed to delete supplier order", error);
+  }
+}
+
+// --- SUPPLIER PRODUCTS CRUD (catalogue produits d'un fournisseur) ---
+
+export async function getSupplierProducts(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(supplierProducts)
+      .where(eq(supplierProducts.userId, dbUserId))
+      .orderBy(supplierProducts.name);
+  } catch (error) {
+    handleDbError("Failed to fetch supplier products", error);
+  }
+}
+
+export async function createSupplierProduct(
+  dbUserId: number,
+  supplierId: number,
+  name: string,
+  unitPrice = 0.0,
+  unit = 'pieces',
+  stockId: number | null = null,
+  active = true
+) {
+  try {
+    const result = await db.insert(supplierProducts)
+      .values({ userId: dbUserId, supplierId, name, unitPrice, unit, stockId, active })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create supplier product", error);
+  }
+}
+
+export async function updateSupplierProduct(
+  productId: number,
+  dbUserId: number,
+  updates: {
+    supplierId?: number;
+    name?: string;
+    unitPrice?: number;
+    unit?: string;
+    stockId?: number | null;
+    active?: boolean;
+  }
+) {
+  try {
+    const result = await db.update(supplierProducts)
+      .set(updates)
+      .where(and(eq(supplierProducts.id, productId), eq(supplierProducts.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update supplier product", error);
+  }
+}
+
+export async function deleteSupplierProduct(productId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(supplierProducts)
+      .where(and(eq(supplierProducts.id, productId), eq(supplierProducts.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete supplier product", error);
   }
 }
 
@@ -1280,11 +1458,12 @@ export async function createDelivery(
   orderId: number | null = null,
   driverName: string | null = null,
   status = 'en_preparation',
-  notes: string | null = null
+  notes: string | null = null,
+  vehicleId: number | null = null
 ) {
   try {
     const result = await db.insert(deliveries)
-      .values({ userId: dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes })
+      .values({ userId: dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes, vehicleId })
       .returning();
     return result[0];
   } catch (error) {
@@ -1305,6 +1484,7 @@ export async function updateDelivery(
     driverName?: string | null;
     status?: string;
     notes?: string | null;
+    vehicleId?: number | null;
   }
 ) {
   try {
@@ -1326,6 +1506,74 @@ export async function deleteDelivery(deliveryId: number, dbUserId: number) {
     return result[0];
   } catch (error) {
     handleDbError("Failed to delete delivery", error);
+  }
+}
+
+// --- ASSETS CRUD (biens & matériel du restaurant) ---
+
+export async function getAssets(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(assets)
+      .where(eq(assets.userId, dbUserId))
+      .orderBy(desc(assets.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch assets", error);
+  }
+}
+
+export async function createAsset(
+  dbUserId: number,
+  name: string,
+  category = 'autre',
+  quantity = 1,
+  condition = 'bon',
+  purchaseValue = 0.0,
+  photoUrl: string | null = null,
+  notes: string | null = null
+) {
+  try {
+    const result = await db.insert(assets)
+      .values({ userId: dbUserId, name, category, quantity, condition, purchaseValue, photoUrl, notes })
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create asset", error);
+  }
+}
+
+export async function updateAsset(
+  assetId: number,
+  dbUserId: number,
+  updates: {
+    name?: string;
+    category?: string;
+    quantity?: number;
+    condition?: string;
+    purchaseValue?: number;
+    photoUrl?: string | null;
+    notes?: string | null;
+  }
+) {
+  try {
+    const result = await db.update(assets)
+      .set(updates)
+      .where(and(eq(assets.id, assetId), eq(assets.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update asset", error);
+  }
+}
+
+export async function deleteAsset(assetId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(assets)
+      .where(and(eq(assets.id, assetId), eq(assets.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete asset", error);
   }
 }
 

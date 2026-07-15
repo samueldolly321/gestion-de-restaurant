@@ -25,6 +25,19 @@ export interface Client {
   createdAt: string;
 }
 
+export interface Asset {
+  id: number;
+  userId: number;
+  name: string; // ex. « Table ronde », « Moto livraison »
+  category: 'mobilier' | 'electronique' | 'vehicule' | 'equipement' | 'autre' | string;
+  quantity: number;
+  condition: 'bon' | 'moyen' | 'a_reparer' | string; // état
+  purchaseValue: number; // valeur estimée (Ar)
+  photoUrl: string | null; // photo (URL ou base64)
+  notes: string | null;
+  createdAt?: string;
+}
+
 export interface Personnel {
   id: number;
   userId: number;
@@ -40,6 +53,7 @@ export interface Personnel {
   hireDate: string | null;   // Date d'embauche
   avatarUrl?: string | null; // Photo de profil
   cvUrl?: string | null; // CV (PDF ou image)
+  vehicleId?: number | null; // véhicule attaché (rôle livreur) — réf. bien de catégorie Véhicule
   createdAt: string;
 }
 
@@ -85,6 +99,9 @@ export interface Order {
   totalAmount: number;
   paymentMethod: 'carte' | 'especes' | 'mobile' | string;
   serverName?: string | null; // serveur/serveuse ayant pris la commande
+  clientId?: number | null; // client (fidélité) ayant passé la commande
+  reference?: string | null; // référence lisible (ex. « 15-04 »)
+  deliveryFee?: number; // frais de livraison (commande à livrer)
   items?: OrderItem[]; // lignes de commande (plats/boissons), addition = somme des lignes
   createdAt: string;
 }
@@ -117,24 +134,46 @@ export interface Supplier {
   createdAt: string;
 }
 
+export interface SupplierOrderItem {
+  id: number;
+  orderId: number;
+  userId: number;
+  label: string; // produit commandé
+  quantity: number; // quantité commandée
+  unitPrice: number; // prix unitaire (Ar)
+  amount: number; // total de la ligne = quantité × prix unitaire
+  stockId: number | null; // article de stock alimenté à la réception
+  stockApplied?: boolean; // quantité déjà ajoutée au stock (garde-fou par ligne)
+  createdAt?: string;
+}
+
 export interface SupplierOrder {
   id: number;
   userId: number;
   supplierId: number;
-  label: string; // description de la commande
-  quantity: number; // quantité commandée
-  unitPrice: number; // prix unitaire (Ar)
-  amount: number; // total = quantité × prix unitaire
+  label: string; // résumé (ex. « Calmar +2 article(s) ») — dérivé des lignes
+  amount: number; // total = somme des lignes
+  items: SupplierOrderItem[]; // lignes de la commande (modèle multi-articles)
   orderDate: string | null; // YYYY-MM-DD
   paymentStatus: 'paye' | 'en_attente' | 'non_paye' | string;
   invoiceNumber: string | null;
   invoiceImageUrl: string | null;
   note: string | null;
   expenseId: number | null; // dépense liée (créée auto au paiement)
-  stockId: number | null; // article de stock alimenté à la réception
   received: boolean; // marchandise reçue ?
-  stockApplied?: boolean; // quantité déjà ajoutée au stock (garde-fou)
   createdAt: string;
+}
+
+export interface SupplierProduct {
+  id: number;
+  userId: number;
+  supplierId: number;
+  name: string; // nom du produit (ex. « Coca 1,5L »)
+  unitPrice: number; // prix courant (pré-remplissage) — figé par ligne à la commande
+  unit: string; // bouteille, kg, l, pièces…
+  stockId: number | null; // article de stock lié (optionnel)
+  active: boolean; // produit encore proposé ?
+  createdAt?: string;
 }
 
 export interface Stock {
@@ -187,6 +226,7 @@ export interface Delivery {
   deliveryTime: string | null; // heure de livraison
   orderId: number | null; // numéro de la commande à livrer
   driverName: string | null; // nom du livreur
+  vehicleId?: number | null; // véhicule ayant fait la livraison — réf. bien de catégorie Véhicule
   status: 'en_preparation' | 'en_route' | 'livree' | 'annulee' | string;
   notes: string | null;
   createdAt: string;

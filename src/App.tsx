@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Calendar,
   Package,
+  Armchair,
   Landmark,
   Settings,
   Truck,
@@ -59,10 +60,11 @@ import IncomeManager from './components/IncomeManager.tsx';
 import DeliveriesManager from './components/DeliveriesManager.tsx';
 import CalendarManager from './components/CalendarManager.tsx';
 import AIManager from './components/AIManager.tsx';
+import AssetsManager from './components/AssetsManager.tsx';
 
-import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent } from './types.ts';
+import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset } from './types.ts';
 
-type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia';
+type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets';
 
 export default function App() {
   // Authentication states
@@ -95,6 +97,8 @@ export default function App() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
+  const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
@@ -157,6 +161,8 @@ export default function App() {
         setStocks([]);
         setSuppliers([]);
         setSupplierOrders([]);
+        setSupplierProducts([]);
+        setAssets([]);
         setStockMovements([]);
         setExpenses([]);
         setRecurringExpenses([]);
@@ -337,6 +343,28 @@ export default function App() {
       setSupplierOrders((prev) => prev.filter((o) => o.id !== data.id));
     });
 
+    // Handle real-time supplier product (catalogue) updates
+    socket.on('supplier_product_created', (newP: SupplierProduct) => {
+      setSupplierProducts((prev) => [...prev.filter((p) => p.id !== newP.id), newP]);
+    });
+    socket.on('supplier_product_updated', (updP: SupplierProduct) => {
+      setSupplierProducts((prev) => prev.map((p) => (p.id === updP.id ? updP : p)));
+    });
+    socket.on('supplier_product_deleted', (data: { id: number }) => {
+      setSupplierProducts((prev) => prev.filter((p) => p.id !== data.id));
+    });
+
+    // Handle real-time asset (biens & matériel) updates
+    socket.on('asset_created', (newA: Asset) => {
+      setAssets((prev) => [newA, ...prev.filter((a) => a.id !== newA.id)]);
+    });
+    socket.on('asset_updated', (updA: Asset) => {
+      setAssets((prev) => prev.map((a) => (a.id === updA.id ? updA : a)));
+    });
+    socket.on('asset_deleted', (data: { id: number }) => {
+      setAssets((prev) => prev.filter((a) => a.id !== data.id));
+    });
+
     // Handle real-time expense updates
     socket.on('expense_created', (newE: Expense) => {
       setExpenses((prev) => [newE, ...prev.filter((e) => e.id !== newE.id)]);
@@ -404,7 +432,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` },
         body: JSON.stringify({ dbUserId: userId })
       }).catch(() => {});
-      const [clientsRes, staffRes, menuRes, ordersRes, notifsRes, resvRes, stocksRes, suppliersRes, expensesRes, deliveriesRes, movementsRes, supplierOrdersRes, incomesRes, recurringRes, specialEventsRes] = await Promise.all([
+      const [clientsRes, staffRes, menuRes, ordersRes, notifsRes, resvRes, stocksRes, suppliersRes, expensesRes, deliveriesRes, movementsRes, supplierOrdersRes, incomesRes, recurringRes, specialEventsRes, supplierProductsRes, assetsRes] = await Promise.all([
         fetch(`/api/clients?dbUserId=${userId}`, {
           headers: { 'Authorization': `Bearer ${jwtToken}` }
         }),
@@ -449,6 +477,12 @@ export default function App() {
         }),
         fetch(`/api/special-events?dbUserId=${userId}`, {
           headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/supplier-products?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
+        }),
+        fetch(`/api/assets?dbUserId=${userId}`, {
+          headers: { 'Authorization': `Bearer ${jwtToken}` }
         })
       ]);
 
@@ -467,6 +501,8 @@ export default function App() {
       if (incomesRes.ok) setIncomes(await incomesRes.json());
       if (recurringRes.ok) setRecurringExpenses(await recurringRes.json());
       if (specialEventsRes.ok) setSpecialEvents(await specialEventsRes.json());
+      if (supplierProductsRes.ok) setSupplierProducts(await supplierProductsRes.json());
+      if (assetsRes.ok) setAssets(await assetsRes.json());
     } catch (err) {
       console.error('Failed to load workspace data:', err);
     } finally {
@@ -951,6 +987,90 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Impossible de supprimer la commande fournisseur.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  // --- SUPPLIER PRODUCTS MUTATORS (catalogue) ---
+  const handleAddSupplierProduct = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/supplier-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'enregistrer le produit.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleEditSupplierProduct = async (id: number, formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/supplier-products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible de modifier le produit.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteSupplierProduct = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/supplier-products/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer le produit.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  // --- ASSETS MUTATORS (biens & matériel) ---
+  const handleAddAsset = async (formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible d\'enregistrer le bien.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleEditAsset = async (id: number, formData: any) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/assets/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ dbUserId: dataOwnerId, ...formData })
+      });
+      if (!res.ok) throw new Error('Impossible de modifier le bien.');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteAsset = async (id: number) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch(`/api/assets/${id}?dbUserId=${dataOwnerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Impossible de supprimer le bien.');
     } catch (err: any) {
       setErrorMsg(err.message);
     }
@@ -1860,6 +1980,7 @@ export default function App() {
               { id: 'clients', label: 'Clients', icon: Users },
               { id: 'calendar', label: 'Calendrier Live', icon: Calendar },
               { id: 'stocks', label: 'Stocks & Fournisseurs', icon: Package },
+              { id: 'assets', label: 'Biens & Matériel', icon: Armchair },
               { id: 'finance', label: 'Argent (Finances)', icon: Landmark, roleRestriction: 'super_admin' },
               { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp },
               { id: 'expenses', label: 'Dépenses diverses', icon: Receipt },
@@ -1952,6 +2073,7 @@ export default function App() {
                   {activeTab === 'calendar' && 'Calendrier Live'}
                   {activeTab === 'personnel' && 'Gestion d\'Équipe'}
                   {activeTab === 'stocks' && 'Inventaire & Stocks'}
+                  {activeTab === 'assets' && 'Biens & Matériel'}
                   {activeTab === 'finance' && 'Rapports Financiers'}
                   {activeTab === 'incomes' && 'Rentrées d\'argent'}
                   {activeTab === 'expenses' && 'Dépenses diverses'}
@@ -1967,6 +2089,7 @@ export default function App() {
                   {activeTab === 'calendar' && 'Planning centralisé : réservations, congés du staff, événements spéciaux'}
                   {activeTab === 'personnel' && 'Congés, taux horaires et fiches de paie'}
                   {activeTab === 'stocks' && 'Alerte stock bas, commandes fournisseurs'}
+                  {activeTab === 'assets' && 'Inventaire du matériel : mobilier, véhicules, équipement'}
                   {activeTab === 'finance' && 'Suivi de chiffre d\'affaires et de dépenses'}
                   {activeTab === 'incomes' && 'Recettes : additions payées (auto) + autres rentrées'}
                   {activeTab === 'expenses' && 'Loyer, charges et factures (photo incluse)'}
@@ -2168,6 +2291,7 @@ export default function App() {
                   orders={orders}
                   menuItems={menuItems}
                   personnel={personnel}
+                  clients={clients}
                   restaurantName={dbUser?.restaurantName}
                   onAddOrder={handleAddOrder}
                   onEditOrder={handleEditOrder}
@@ -2240,6 +2364,7 @@ export default function App() {
               >
                 <PersonnelManager
                   personnel={personnel}
+                  assets={assets}
                   userRole={dbUser?.role || 'super_admin'}
                   onAddStaff={handleAddStaff}
                   onEditStaff={handleEditStaff}
@@ -2262,6 +2387,7 @@ export default function App() {
                   menuItems={menuItems}
                   stockMovements={stockMovements}
                   supplierOrders={supplierOrders}
+                  supplierProducts={supplierProducts}
                   onAddStock={handleAddStock}
                   onEditStock={handleEditStock}
                   onDeleteStock={handleDeleteStock}
@@ -2271,6 +2397,26 @@ export default function App() {
                   onAddSupplier={handleAddSupplier}
                   onEditSupplier={handleEditSupplier}
                   onDeleteSupplier={handleDeleteSupplier}
+                  onAddSupplierProduct={handleAddSupplierProduct}
+                  onEditSupplierProduct={handleEditSupplierProduct}
+                  onDeleteSupplierProduct={handleDeleteSupplierProduct}
+                />
+              </motion.div>
+            )}
+
+            {activeTab === 'assets' && (
+              <motion.div
+                key="assets-view"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+              >
+                <AssetsManager
+                  assets={assets}
+                  onAddAsset={handleAddAsset}
+                  onEditAsset={handleEditAsset}
+                  onDeleteAsset={handleDeleteAsset}
                 />
               </motion.div>
             )}
@@ -2342,6 +2488,7 @@ export default function App() {
                   deliveries={deliveries}
                   personnel={personnel}
                   orders={orders}
+                  assets={assets}
                   onAddDelivery={handleAddDelivery}
                   onEditDelivery={handleEditDelivery}
                   onDeleteDelivery={handleDeleteDelivery}

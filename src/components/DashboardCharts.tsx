@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ResponsiveContainer,
   PieChart,
@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { Client, Personnel, MenuItem, Order, Expense, Income } from '../types.ts';
-import { Landmark, ShoppingBag, Users, Clock, ClipboardList, Utensils, TrendingUp, TrendingDown, Wine } from 'lucide-react';
+import { Landmark, ShoppingBag, Users, Clock, ClipboardList, Utensils, TrendingUp, TrendingDown, Wine, X } from 'lucide-react';
 
 interface DashboardChartsProps {
   clients: Client[];
@@ -77,6 +77,24 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
   const monthlyRevenue = monthlyOrderRevenue + monthlyOtherIncome;
   const monthlyProfit = monthlyRevenue - monthlyOutflow;
 
+  // --- Détail des entrées d'AUJOURD'HUI (additions payées + rentrées manuelles du jour) ---
+  const [showTodayIncome, setShowTodayIncome] = useState(false);
+  const todayOrderEntries = orders
+    .filter((o) => o.status === 'paye' && new Date(o.createdAt).toISOString().slice(0, 10) === todayStr)
+    .map((o) => ({ id: `o${o.id}`, label: `Table #${o.tableNumber}`, sub: o.serverName ? `Servi par ${o.serverName}` : 'Addition', amount: o.totalAmount, method: o.paymentMethod, type: 'Addition' as const }));
+  const todayManualEntries = incomes
+    .filter((i) => (i.incomeDate || i.createdAt || '').slice(0, 10) === todayStr)
+    .map((i) => ({ id: `i${i.id}`, label: i.label, sub: i.source || 'Rentrée manuelle', amount: i.amount, method: i.paymentMethod, type: 'Rentrée' as const }));
+  const todayEntries = [...todayOrderEntries, ...todayManualEntries];
+  const todayIncomeTotal = todayEntries.reduce((s, e) => s + (e.amount || 0), 0);
+
+  // --- Détail des dépenses d'AUJOURD'HUI (dépenses diverses datées du jour + quote-part salaires) ---
+  const [showTodayExpense, setShowTodayExpense] = useState(false);
+  const todayExpenseEntries = expenses
+    .filter((e) => (e.expenseDate || '').startsWith(todayStr))
+    .map((e) => ({ id: `e${e.id}`, label: e.label, sub: e.category || 'Divers', amount: e.amount }));
+  const dailyPayrollShare = Math.round(monthlyPayroll / 30); // quote-part quotidienne des salaires
+
   // --- Ratios clés (mois en cours) ---
   // Food cost = achats matières = dépenses de catégorie « ingredients » (dont commandes fournisseurs payées).
   const foodCostMonth = expenses
@@ -87,6 +105,14 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
   const grossMargin = monthlyRevenue - foodCostMonth; // marge brute (après matières)
 
   // --- Trésorerie : entrées vs sorties sur les 6 derniers mois ---
+  // Masse salariale d'un mois donné = salaires des employés DÉJÀ embauchés à ce mois-là
+  // (date d'embauche, à défaut date de création). Plus juste que d'appliquer le total actuel
+  // à tous les mois. NB : sans date de départ enregistrée, un employé parti reste compté.
+  const payrollForMonth = (key: string) =>
+    personnel
+      .filter((p) => (p.hireDate || p.createdAt || '').slice(0, 7) <= key)
+      .reduce((s, p) => s + (p.salary || 0), 0);
+
   const cashflowBase = new Date();
   const cashflowData = Array.from({ length: 6 }, (_, idx) => {
     const d = new Date(cashflowBase.getFullYear(), cashflowBase.getMonth() - (5 - idx), 1);
@@ -96,7 +122,7 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
       incomes.filter((i) => (i.incomeDate || i.createdAt || '').slice(0, 7) === key).reduce((s, i) => s + (i.amount || 0), 0);
     const sorties =
       expenses.filter((e) => (e.expenseDate || e.createdAt || '').slice(0, 7) === key).reduce((s, e) => s + (e.amount || 0), 0) +
-      monthlyPayroll; // salaires : charge mensuelle récurrente estimée
+      payrollForMonth(key); // salaires réellement en place ce mois-là (selon dates d'embauche)
     return { name: d.toLocaleDateString('fr-FR', { month: 'short' }), Entrées: Math.round(entrees), Sorties: Math.round(sorties) };
   });
 
@@ -216,18 +242,29 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
           <Landmark className="w-4 h-4 text-red-600" /> Bilan financier — Mois en cours
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Entrées d'argent */}
-          <div className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40">
+          {/* Entrées d'argent — cliquable : détail des entrées d'aujourd'hui */}
+          <button
+            type="button"
+            onClick={() => setShowTodayIncome(true)}
+            className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 text-left w-full cursor-pointer hover:bg-emerald-50 hover:border-emerald-200 transition-colors"
+            title="Voir les entrées d'aujourd'hui"
+          >
             <div className="flex items-center gap-2 text-emerald-700">
               <TrendingUp className="w-4 h-4" />
               <span className="text-[10px] font-bold uppercase tracking-wider">Entrées d'argent</span>
             </div>
             <h4 className="font-display font-black text-lg sm:text-xl text-emerald-700 mt-1.5 truncate">{formatAr(monthlyRevenue)}</h4>
             <p className="text-[9px] text-slate-400 mt-0.5">Additions {formatAr(monthlyOrderRevenue)} + autres {formatAr(monthlyOtherIncome)}</p>
-          </div>
+            <p className="text-[9px] font-bold text-emerald-600 mt-1.5 flex items-center gap-1">👆 Voir les entrées d'aujourd'hui ({todayEntries.length})</p>
+          </button>
 
-          {/* Dépenses (sorties d'argent) */}
-          <div className="p-4 rounded-2xl border border-rose-100 bg-rose-50/40">
+          {/* Dépenses (sorties d'argent) — cliquable : détail des dépenses d'aujourd'hui */}
+          <button
+            type="button"
+            onClick={() => setShowTodayExpense(true)}
+            className="p-4 rounded-2xl border border-rose-100 bg-rose-50/40 text-left w-full cursor-pointer hover:bg-rose-50 hover:border-rose-200 transition-colors"
+            title="Voir les dépenses d'aujourd'hui"
+          >
             <div className="flex items-center gap-2 text-rose-700">
               <TrendingDown className="w-4 h-4" />
               <span className="text-[10px] font-bold uppercase tracking-wider">Dépenses (sorties)</span>
@@ -238,7 +275,8 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
                 ? `Salaires ${formatAr(monthlyPayroll)} + dépenses diverses ${formatAr(monthlyMiscExpenses)} · dont auj. ${formatAr(dailyOutflow)}`
                 : 'Salaires + dépenses diverses (réservé au Super Admin)'}
             </p>
-          </div>
+            <p className="text-[9px] font-bold text-rose-600 mt-1.5">👆 Voir les dépenses d'aujourd'hui ({todayExpenseEntries.length})</p>
+          </button>
 
           {/* Bénéfice = Entrées − Dépenses */}
           <div className={`p-4 rounded-2xl border ${monthlyProfit >= 0 ? 'border-emerald-100 bg-emerald-50/60' : 'border-rose-200 bg-rose-50/60'}`}>
@@ -253,6 +291,94 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
           </div>
         </div>
       </div>
+
+      {/* Modale : détail des entrées d'aujourd'hui */}
+      {showTodayIncome && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4" onClick={() => setShowTodayIncome(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 text-left max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between sticky top-0">
+              <h3 className="font-display font-bold text-slate-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                Entrées d'aujourd'hui
+              </h3>
+              <button onClick={() => setShowTodayIncome(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div className="flex items-center justify-between bg-emerald-50/60 border border-emerald-100 rounded-xl px-4 py-2.5">
+                <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Total du jour</span>
+                <span className="text-lg font-black text-emerald-700 font-mono">{formatAr(todayIncomeTotal)}</span>
+              </div>
+              {todayEntries.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-8">Aucune entrée enregistrée aujourd'hui.</p>
+              ) : (
+                <div className="divide-y divide-slate-50">
+                  {todayEntries.map((e) => (
+                    <div key={e.id} className="flex items-center justify-between py-2.5">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase border ${e.type === 'Addition' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{e.type}</span>
+                          <span className="font-semibold text-slate-700 text-xs truncate">{e.label}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{e.sub} · {e.method}</p>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700 text-sm shrink-0 ml-3">{formatAr(e.amount || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[9px] text-slate-400">Additions payées aujourd'hui + rentrées d'argent manuelles du jour. Le bloc affiche le total du mois ; ce détail concerne le jour même.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale : détail des dépenses d'aujourd'hui */}
+      {showTodayExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4" onClick={() => setShowTodayExpense(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 text-left max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between sticky top-0">
+              <h3 className="font-display font-bold text-slate-900 flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-rose-600" />
+                Dépenses d'aujourd'hui
+              </h3>
+              <button onClick={() => setShowTodayExpense(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div className="flex items-center justify-between bg-rose-50/60 border border-rose-100 rounded-xl px-4 py-2.5">
+                <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider">Total du jour</span>
+                <span className="text-lg font-black text-rose-700 font-mono">{formatAr(dailyOutflow)}</span>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {todayExpenseEntries.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between py-2.5">
+                    <div className="min-w-0">
+                      <span className="font-semibold text-slate-700 text-xs truncate">{e.label}</span>
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">{e.sub}</p>
+                    </div>
+                    <span className="font-mono font-black text-rose-700 text-sm shrink-0 ml-3">{formatAr(e.amount || 0)}</span>
+                  </div>
+                ))}
+                {/* Quote-part quotidienne des salaires (charge mensuelle répartie sur 30 j) */}
+                <div className="flex items-center justify-between py-2.5">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-slate-500 text-xs truncate">Salaires (quote-part du jour)</span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Estimation : masse salariale mensuelle ÷ 30</p>
+                  </div>
+                  <span className="font-mono font-bold text-slate-500 text-sm shrink-0 ml-3">{formatAr(dailyPayrollShare)}</span>
+                </div>
+              </div>
+              {todayExpenseEntries.length === 0 && (
+                <p className="text-center text-[10px] text-slate-400">Aucune dépense diverse datée d'aujourd'hui (hors quote-part salaires).</p>
+              )}
+              <p className="text-[9px] text-slate-400">Dépenses diverses datées d'aujourd'hui (loyer, charges, achats, commandes fournisseurs payées) + quote-part quotidienne estimée des salaires. Total = « dont auj. » du bloc.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ratios clés + Trésorerie */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -291,9 +417,10 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
 
         {/* Courbe de trésorerie */}
         <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-3xs flex flex-col h-[280px] lg:col-span-2">
-          <h3 className="font-display font-semibold text-slate-800 text-sm mb-4 text-left flex items-center gap-1.5">
+          <h3 className="font-display font-semibold text-slate-800 text-sm mb-1 text-left flex items-center gap-1.5">
             <Landmark className="w-4 h-4 text-red-600" /> Trésorerie — 6 derniers mois (Entrées vs Sorties)
           </h3>
+          <p className="text-[9px] text-slate-400 mb-3 text-left">Salaires comptés selon la date d'embauche de chaque employé (masse salariale réelle de chaque mois).</p>
           <div className="flex-1 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={cashflowData} margin={{ top: 10, right: 10, left: -15, bottom: 5 }}>

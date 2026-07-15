@@ -15,6 +15,7 @@ import {
   getClients,
   createClient,
   updateClient,
+  incrementClientLoyalty,
   deleteClient,
   getPersonnel,
   createPersonnel,
@@ -27,6 +28,7 @@ import {
   getOrders,
   createOrder,
   updateOrder,
+  getOrderById,
   deleteOrder,
   getNotifications,
   createNotification,
@@ -44,7 +46,12 @@ import {
   getSupplierOrderById,
   createSupplierOrder,
   updateSupplierOrder,
+  markSupplierOrderItemApplied,
   deleteSupplierOrder,
+  getSupplierProducts,
+  createSupplierProduct,
+  updateSupplierProduct,
+  deleteSupplierProduct,
   getStocks,
   createStock,
   updateStock,
@@ -71,7 +78,11 @@ import {
   getDeliveries,
   createDelivery,
   updateDelivery,
-  deleteDelivery
+  deleteDelivery,
+  getAssets,
+  createAsset,
+  updateAsset,
+  deleteAsset
 } from './src/db/queries.ts';
 
 async function startServer() {
@@ -286,7 +297,7 @@ async function startServer() {
 
   app.post('/api/personnel', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl } = req.body;
+      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl, vehicleId } = req.body;
       if (!dbUserId || !name) {
         return res.status(400).json({ error: 'Missing dbUserId or name' });
       }
@@ -309,7 +320,8 @@ async function startServer() {
         leaveEnd,
         hireDate,
         avatarUrl,
-        cvUrl
+        cvUrl,
+        vehicleId ? parseInt(vehicleId) : null
       );
 
       // Save notification to database
@@ -331,7 +343,7 @@ async function startServer() {
   app.put('/api/personnel/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const personnelId = parseInt(req.params.id);
-      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl } = req.body;
+      const { dbUserId, name, email, phone, role, status, hourlyRate, salary, leaveStart, leaveEnd, hireDate, avatarUrl, cvUrl, vehicleId } = req.body;
 
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
@@ -353,7 +365,8 @@ async function startServer() {
         leaveEnd,
         hireDate,
         avatarUrl,
-        cvUrl
+        cvUrl,
+        vehicleId: vehicleId !== undefined ? (vehicleId ? parseInt(vehicleId) : null) : undefined
       });
 
       if (!updated) {
@@ -530,13 +543,46 @@ async function startServer() {
     }
   }
 
+  // Crée automatiquement une livraison (stub) pour une commande « à livrer », si elle n'en a pas.
+  // Le livreur et l'adresse seront complétés ensuite dans l'onglet Livraisons ; la commande est
+  // tracée via son orderId (et sa référence).
+  async function ensureDeliveryForOrder(dbUserId: number, order: any) {
+    if (!order || order.orderType !== 'a_livrer') return;
+    const existing = await getDeliveries(dbUserId);
+    if ((existing || []).some((d: any) => d.orderId === order.id)) return; // pas de doublon
+    let clientName = `Table ${order.tableNumber}`;
+    let clientPhone: string | null = null;
+    if (order.clientId) {
+      const clientsList = await getClients(dbUserId);
+      const c = (clientsList || []).find((x: any) => x.id === order.clientId);
+      if (c) { clientName = c.name; clientPhone = c.phone || null; }
+    }
+    const today = new Date().toISOString().split('T')[0];
+    const deliv = await createDelivery(
+      dbUserId, clientName, 'À renseigner', clientPhone, today, null,
+      order.id, null, 'en_preparation',
+      `Réf. commande ${order.reference || order.id} — adresse & livreur à compléter`, null
+    );
+    io.to(String(dbUserId)).emit('delivery_created', deliv);
+  }
+
   app.post('/api/orders', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate } = req.body;
+      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee } = req.body;
       if (!dbUserId || !tableNumber) {
         return res.status(400).json({ error: 'Missing dbUserId or tableNumber' });
       }
 
+      // Référence lisible auto : « JJ-NN » (NN = n° de la commande du jour). Ex. « 15-04 ».
+      const nowIso = new Date().toISOString();
+      const todayKey = nowIso.slice(0, 10);
+      const dd = nowIso.slice(8, 10);
+      const existingOrders = await getOrders(parseInt(dbUserId));
+      const seqToday = (existingOrders || []).filter((o: any) => new Date(o.createdAt).toISOString().slice(0, 10) === todayKey).length + 1;
+      const reference = `${dd}-${String(seqToday).padStart(2, '0')}`;
+
+      const clientIdNum = clientId ? parseInt(clientId) : null;
+      const feeNum = deliveryFee !== undefined ? parseFloat(deliveryFee) : 0;
       const newOrder = await createOrder(
         parseInt(dbUserId),
         parseInt(tableNumber),
@@ -545,7 +591,10 @@ async function startServer() {
         Array.isArray(items) ? items : [],
         serverName || null,
         orderType || 'sur_place',
-        taxRate !== undefined ? parseFloat(taxRate) : 0
+        taxRate !== undefined ? parseFloat(taxRate) : 0,
+        clientIdNum,
+        reference,
+        orderType === 'a_livrer' ? feeNum : 0
       );
 
       // Save notification to database
@@ -557,6 +606,15 @@ async function startServer() {
       const room = String(dbUserId);
       io.to(room).emit('order_created', newOrder);
       io.to(room).emit('notification', newNotif);
+
+      // Fidélité : +1 point au client rattaché à la commande (une visite = un point).
+      if (clientIdNum) {
+        const updatedClient = await incrementClientLoyalty(clientIdNum, parseInt(dbUserId), 1);
+        if (updatedClient) io.to(room).emit('client_updated', updatedClient);
+      }
+
+      // Commande à livrer → crée automatiquement la livraison correspondante (livreur à attribuer ensuite).
+      await ensureDeliveryForOrder(parseInt(dbUserId), newOrder);
 
       // Dès que le plat est servi (ou payé), on décrémente le stock des ingrédients consommés.
       if (newOrder?.status === 'servi' || newOrder?.status === 'paye') {
@@ -572,11 +630,15 @@ async function startServer() {
   app.put('/api/orders/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const orderId = parseInt(req.params.id);
-      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate } = req.body;
+      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee } = req.body;
 
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
+
+      // Client de la commande AVANT modification (pour n'attribuer un point qu'une seule fois).
+      const before = clientId !== undefined ? await getOrderById(orderId, parseInt(dbUserId)) : null;
+      const newClientId = clientId !== undefined ? (clientId ? parseInt(clientId) : null) : undefined;
 
       const updated = await updateOrder(orderId, parseInt(dbUserId), {
         tableNumber: tableNumber ? parseInt(tableNumber) : undefined,
@@ -585,12 +647,23 @@ async function startServer() {
         serverName: serverName !== undefined ? (serverName || null) : undefined,
         orderType: orderType !== undefined ? orderType : undefined,
         taxRate: taxRate !== undefined ? parseFloat(taxRate) : undefined,
+        clientId: newClientId,
+        deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : undefined,
         items: Array.isArray(items) ? items : undefined
       });
 
       if (!updated) {
         return res.status(404).json({ error: 'Order not found or access denied' });
       }
+
+      // Fidélité : si on rattache un client à une commande qui n'en avait pas, +1 point (une seule fois).
+      if (newClientId && !(before as any)?.clientId) {
+        const updatedClient = await incrementClientLoyalty(newClientId, parseInt(dbUserId), 1);
+        if (updatedClient) io.to(String(dbUserId)).emit('client_updated', updatedClient);
+      }
+
+      // Si la commande passe (ou reste) « à livrer », s'assurer qu'une livraison existe.
+      await ensureDeliveryForOrder(parseInt(dbUserId), updated);
 
       // Save notification to database on status shift
       const notifTitle = 'Statut Commande';
@@ -953,26 +1026,86 @@ async function startServer() {
     }
   }
 
-  // Option ① : à la réception d'une commande fournisseur liée à un article de stock,
-  // on ajoute la quantité au stock (+ mouvement d'historique + coût unitaire). Idempotent.
+  // À la réception d'une commande fournisseur (received = true), on alimente le stock de
+  // CHAQUE ligne liée à un article : on ajoute la quantité (+ mouvement d'historique + coût
+  // unitaire). Idempotent par ligne (garde-fou item.stockApplied) — réception globale.
   async function applySupplierOrderToStock(dbUserId: number, order: any) {
-    if (!order || !order.received || !order.stockId || order.stockApplied) return;
-    const stocksList = await getStocks(dbUserId);
-    const stock = (stocksList || []).find((s: any) => s.id === order.stockId);
-    if (!stock) return;
-    const qty = Number(order.quantity) || 0;
-    const newQty = (Number(stock.quantity) || 0) + qty;
-    const newInit = (Number(stock.initialQuantity) || 0) + qty;
-    const updatedStock = await updateStock(order.stockId, dbUserId, {
-      quantity: newQty,
-      initialQuantity: newInit,
-      unitCost: Number(order.unitPrice) || stock.unitCost, // le prix d'achat met à jour le coût unitaire
-    });
+    if (!order || !order.received || !Array.isArray(order.items)) return;
     const room = String(dbUserId);
+    const stocksList = await getStocks(dbUserId);
+    for (const item of order.items) {
+      if (!item.stockId || item.stockApplied) continue;
+      const stock = (stocksList || []).find((s: any) => s.id === item.stockId);
+      if (!stock) continue;
+      const qty = Number(item.quantity) || 0;
+      const newQty = (Number(stock.quantity) || 0) + qty;
+      const newInit = (Number(stock.initialQuantity) || 0) + qty;
+      const updatedStock = await updateStock(item.stockId, dbUserId, {
+        quantity: newQty,
+        initialQuantity: newInit,
+        unitCost: Number(item.unitPrice) || stock.unitCost, // le prix d'achat met à jour le coût unitaire
+      });
+      if (updatedStock) {
+        io.to(room).emit('stock_updated', updatedStock);
+        // Refléter la nouvelle quantité pour les lignes suivantes pointant le même stock.
+        stock.quantity = newQty;
+        stock.initialQuantity = newInit;
+      }
+      const mv = await createStockMovement(dbUserId, stock.id, stock.itemName, qty, stock.unit, `Commande fournisseur : ${item.label}`);
+      io.to(room).emit('stock_movement_created', mv);
+      await markSupplierOrderItemApplied(item.id, dbUserId);
+    }
+  }
+
+  // Ajuste la quantité d'un article de stock d'un delta (±) et journalise le mouvement.
+  // Sert à corriger le stock quand on modifie la quantité d'une ligne DÉJÀ reçue.
+  async function adjustStockQuantity(dbUserId: number, stockId: number, delta: number, label: string) {
+    if (!stockId || !delta) return;
+    const stocksList = await getStocks(dbUserId);
+    const stock = (stocksList || []).find((s: any) => s.id === stockId);
+    if (!stock) return;
+    const room = String(dbUserId);
+    const newQty = Math.max(0, (Number(stock.quantity) || 0) + delta);
+    const newInit = Math.max(0, (Number(stock.initialQuantity) || 0) + delta);
+    const updatedStock = await updateStock(stockId, dbUserId, { quantity: newQty, initialQuantity: newInit });
     if (updatedStock) io.to(room).emit('stock_updated', updatedStock);
-    const mv = await createStockMovement(dbUserId, stock.id, stock.itemName, qty, stock.unit, `Commande fournisseur : ${order.label}`);
+    const mv = await createStockMovement(dbUserId, stock.id, stock.itemName, delta, stock.unit, label);
     io.to(room).emit('stock_movement_created', mv);
-    await updateSupplierOrder(order.id, dbUserId, { stockApplied: true });
+  }
+
+  // Normalise les lignes reçues du client en lignes prêtes pour la base :
+  //  - crée l'article de stock à la volée si `newStockUnit` est fourni sans `stockId` ;
+  //  - préserve le garde-fou `stockApplied` des lignes déjà existantes (via `existingById`),
+  //    pour ne pas ré-alimenter le stock quand on édite une commande déjà reçue.
+  async function prepareSupplierOrderItems(
+    dbUserId: number,
+    supplierId: number | null,
+    rawItems: any[],
+    existingById: Map<number, any> = new Map()
+  ) {
+    const prepared: any[] = [];
+    for (const raw of (rawItems || [])) {
+      const label = (raw?.label || '').trim();
+      if (!label) continue; // on ignore les lignes vides
+      const quantity = raw.quantity !== undefined ? parseFloat(raw.quantity) : 1.0;
+      const unitPrice = raw.unitPrice !== undefined ? parseFloat(raw.unitPrice) : 0.0;
+      let stockId = raw.stockId ? parseInt(raw.stockId) : null;
+      if (!stockId && raw.newStockUnit) {
+        const st = await createStock(dbUserId, label, 0, raw.newStockUnit, 5, supplierId, null, unitPrice);
+        stockId = st.id;
+        io.to(String(dbUserId)).emit('stock_created', st);
+      }
+      const prior = raw.id ? existingById.get(parseInt(raw.id)) : undefined;
+      prepared.push({
+        label,
+        quantity: isNaN(quantity) ? 0 : quantity,
+        unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
+        stockId,
+        // On ne conserve l'état "appliqué" que si la ligne pointe le MÊME stock qu'avant.
+        stockApplied: prior && prior.stockId === stockId ? !!prior.stockApplied : false,
+      });
+    }
+    return prepared;
   }
 
   app.get('/api/supplier-orders', requireAuth, async (req: AuthRequest, res) => {
@@ -988,37 +1121,27 @@ async function startServer() {
 
   app.post('/api/supplier-orders', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, supplierId, label, quantity, unitPrice, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received, newStockUnit } = req.body;
-      if (!dbUserId || !supplierId || !label) {
-        return res.status(400).json({ error: 'Missing dbUserId, supplierId or label' });
+      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received } = req.body;
+      if (!dbUserId || !supplierId || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Missing dbUserId, supplierId or items' });
       }
-      // Si demandé, on crée un NOUVEL article de stock (à partir de l'objet de la commande) et on le lie.
-      let linkedStockId = stockId ? parseInt(stockId) : null;
-      if (!linkedStockId && newStockUnit) {
-        const st = await createStock(
-          parseInt(dbUserId), label, 0, newStockUnit, 5,
-          supplierId ? parseInt(supplierId) : null, null,
-          unitPrice !== undefined ? parseFloat(unitPrice) : 0.0
-        );
-        linkedStockId = st.id;
-        io.to(String(dbUserId)).emit('stock_created', st);
-      }
+      // Résout chaque ligne (création de stock à la volée si demandé).
+      const preparedItems = await prepareSupplierOrderItems(parseInt(dbUserId), parseInt(supplierId), items);
+      if (preparedItems.length === 0) return res.status(400).json({ error: 'No valid order line' });
+
       const newOrder = await createSupplierOrder(
         parseInt(dbUserId),
         parseInt(supplierId),
-        label,
-        quantity !== undefined ? parseFloat(quantity) : 1.0,
-        unitPrice !== undefined ? parseFloat(unitPrice) : 0.0,
+        preparedItems,
         orderDate || null,
         paymentStatus || 'en_attente',
         invoiceNumber || null,
         invoiceImageUrl || null,
         note || null,
-        linkedStockId,
         received === true || received === 'true'
       );
       await syncSupplierOrderExpense(parseInt(dbUserId), newOrder);
-      // Si créée déjà "reçue" et liée à un stock, on alimente le stock immédiatement.
+      // Si créée déjà "reçue", on alimente immédiatement le stock des lignes liées.
       const afterExpense = await getSupplierOrderById(newOrder.id, parseInt(dbUserId));
       await applySupplierOrderToStock(parseInt(dbUserId), afterExpense);
       const finalOrder = await getSupplierOrderById(newOrder.id, parseInt(dbUserId));
@@ -1032,36 +1155,51 @@ async function startServer() {
   app.put('/api/supplier-orders/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const orderId = parseInt(req.params.id);
-      const { dbUserId, supplierId, label, quantity, unitPrice, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, stockId, received, newStockUnit } = req.body;
+      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received } = req.body;
       if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
-      // Création d'un nouvel article de stock lié (si demandé et aucun stockId fourni).
-      let linkedStockId = stockId !== undefined ? (stockId ? parseInt(stockId) : null) : undefined;
-      if ((linkedStockId === undefined || linkedStockId === null) && newStockUnit) {
+
+      // Si de nouvelles lignes sont fournies, on les prépare en préservant le garde-fou
+      // stockApplied des lignes existantes (pour ne pas ré-alimenter un stock déjà reçu).
+      let preparedItems: any[] | undefined = undefined;
+      const stockCorrections: { stockId: number; delta: number; label: string }[] = [];
+      if (Array.isArray(items)) {
         const existing = await getSupplierOrderById(orderId, parseInt(dbUserId));
-        const stName = label || existing?.label || 'Article';
-        const stPrice = unitPrice !== undefined ? parseFloat(unitPrice) : (existing?.unitPrice || 0);
-        const st = await createStock(parseInt(dbUserId), stName, 0, newStockUnit, 5, supplierId ? parseInt(supplierId) : (existing?.supplierId || null), null, stPrice);
-        linkedStockId = st.id;
-        io.to(String(dbUserId)).emit('stock_created', st);
+        const existingById = new Map<number, any>((existing?.items || []).map((it: any) => [it.id, it]));
+        const effSupplierId = supplierId !== undefined ? parseInt(supplierId) : (existing?.supplierId ?? null);
+        preparedItems = await prepareSupplierOrderItems(parseInt(dbUserId), effSupplierId, items, existingById);
+        // Correction du stock : pour une ligne DÉJÀ appliquée dont la quantité change (même
+        // article de stock), on ajuste le stock du delta (newQty − oldQty) + mouvement de correction.
+        for (const raw of items) {
+          if (!raw || raw.id === undefined || raw.id === null) continue;
+          const old = existingById.get(parseInt(raw.id));
+          if (!old || !old.stockApplied || !old.stockId) continue;
+          const newStockId = raw.stockId ? parseInt(raw.stockId) : null;
+          if (newStockId !== old.stockId) continue; // changement d'article → géré par (ré)application
+          const newQty = raw.quantity !== undefined ? parseFloat(raw.quantity) : Number(old.quantity);
+          const delta = (isNaN(newQty) ? 0 : newQty) - Number(old.quantity);
+          if (delta !== 0) stockCorrections.push({ stockId: old.stockId, delta, label: raw.label || old.label });
+        }
       }
+
       const updated = await updateSupplierOrder(orderId, parseInt(dbUserId), {
         supplierId: supplierId !== undefined ? parseInt(supplierId) : undefined,
-        label,
-        quantity: quantity !== undefined ? parseFloat(quantity) : undefined,
-        unitPrice: unitPrice !== undefined ? parseFloat(unitPrice) : undefined,
         orderDate: orderDate !== undefined ? (orderDate || null) : undefined,
         paymentStatus,
         invoiceNumber: invoiceNumber !== undefined ? (invoiceNumber || null) : undefined,
         invoiceImageUrl: invoiceImageUrl !== undefined ? (invoiceImageUrl || null) : undefined,
         note: note !== undefined ? (note || null) : undefined,
-        stockId: linkedStockId,
-        received: received !== undefined ? (received === true || received === 'true') : undefined
+        received: received !== undefined ? (received === true || received === 'true') : undefined,
+        items: preparedItems,
       });
       if (!updated) return res.status(404).json({ error: 'Supplier order not found or access denied' });
       await syncSupplierOrderExpense(parseInt(dbUserId), updated);
-      // Réception → alimente le stock (une seule fois, garde-fou stockApplied).
+      // Réception → alimente le stock des lignes non encore appliquées (idempotent par ligne).
       const afterExpense = await getSupplierOrderById(orderId, parseInt(dbUserId));
       await applySupplierOrderToStock(parseInt(dbUserId), afterExpense);
+      // Puis corrige le stock des lignes déjà appliquées dont la quantité a changé.
+      for (const c of stockCorrections) {
+        await adjustStockQuantity(parseInt(dbUserId), c.stockId, c.delta, `Correction commande fournisseur : ${c.label}`);
+      }
       const finalOrder = await getSupplierOrderById(orderId, parseInt(dbUserId));
       io.to(String(dbUserId)).emit('supplier_order_updated', finalOrder);
       res.json(finalOrder);
@@ -1085,6 +1223,87 @@ async function startServer() {
         if (del) io.to(room).emit('expense_deleted', { id: existing.expenseId });
       }
       io.to(room).emit('supplier_order_deleted', { id: orderId });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- SUPPLIER PRODUCTS ENDPOINTS (catalogue produits d'un fournisseur) ---
+  app.get('/api/supplier-products', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const list = await getSupplierProducts(dbUserId);
+      res.json(list || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/supplier-products', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, supplierId, name, unitPrice, unit, stockId, newStockUnit, active } = req.body;
+      if (!dbUserId || !supplierId || !name) {
+        return res.status(400).json({ error: 'Missing dbUserId, supplierId or name' });
+      }
+      const price = unitPrice !== undefined ? parseFloat(unitPrice) : 0.0;
+      // Option « Autre » : crée un nouvel article de stock (nom = produit) et le lie.
+      let linkedStockId = stockId ? parseInt(stockId) : null;
+      if (!linkedStockId && newStockUnit) {
+        const st = await createStock(parseInt(dbUserId), name, 0, newStockUnit, 5, parseInt(supplierId), null, price);
+        linkedStockId = st.id;
+        io.to(String(dbUserId)).emit('stock_created', st);
+      }
+      const created = await createSupplierProduct(
+        parseInt(dbUserId), parseInt(supplierId), name,
+        price, unit || 'pieces', linkedStockId,
+        active !== undefined ? (active === true || active === 'true') : true
+      );
+      io.to(String(dbUserId)).emit('supplier_product_created', created);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/supplier-products/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const productId = parseInt(req.params.id);
+      const { dbUserId, supplierId, name, unitPrice, unit, stockId, newStockUnit, active } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const price = unitPrice !== undefined ? parseFloat(unitPrice) : undefined;
+      // Option « Autre » : crée un nouvel article de stock à lier (si demandé et aucun stockId).
+      let linkedStockId: number | null | undefined = stockId !== undefined ? (stockId ? parseInt(stockId) : null) : undefined;
+      if ((linkedStockId === undefined || linkedStockId === null) && newStockUnit && name) {
+        const st = await createStock(parseInt(dbUserId), name, 0, newStockUnit, 5, supplierId ? parseInt(supplierId) : null, null, price ?? 0);
+        linkedStockId = st.id;
+        io.to(String(dbUserId)).emit('stock_created', st);
+      }
+      const updated = await updateSupplierProduct(productId, parseInt(dbUserId), {
+        supplierId: supplierId !== undefined ? parseInt(supplierId) : undefined,
+        name,
+        unitPrice: price,
+        unit: unit !== undefined ? unit : undefined,
+        stockId: linkedStockId,
+        active: active !== undefined ? (active === true || active === 'true') : undefined,
+      });
+      if (!updated) return res.status(404).json({ error: 'Supplier product not found or access denied' });
+      io.to(String(dbUserId)).emit('supplier_product_updated', updated);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/supplier-products/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const productId = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const deleted = await deleteSupplierProduct(productId, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Supplier product not found or access denied' });
+      io.to(String(dbUserId)).emit('supplier_product_deleted', { id: productId });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1551,7 +1770,7 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
 
   app.post('/api/deliveries', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes } = req.body;
+      const { dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes, vehicleId } = req.body;
       if (!dbUserId || !clientName || !address) {
         return res.status(400).json({ error: 'Missing dbUserId, clientName or address' });
       }
@@ -1565,7 +1784,8 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
         orderId ? parseInt(orderId) : null,
         driverName || null,
         status || 'en_preparation',
-        notes || null
+        notes || null,
+        vehicleId ? parseInt(vehicleId) : null
       );
 
       const room = String(dbUserId);
@@ -1588,7 +1808,7 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
   app.put('/api/deliveries/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const deliveryId = parseInt(req.params.id);
-      const { dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes } = req.body;
+      const { dbUserId, clientName, address, clientPhone, deliveryDate, deliveryTime, orderId, driverName, status, notes, vehicleId } = req.body;
       if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
 
       const updated = await updateDelivery(deliveryId, parseInt(dbUserId), {
@@ -1600,7 +1820,8 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
         orderId: orderId !== undefined ? (orderId ? parseInt(orderId) : null) : undefined,
         driverName: driverName !== undefined ? (driverName || null) : undefined,
         status,
-        notes: notes !== undefined ? (notes || null) : undefined
+        notes: notes !== undefined ? (notes || null) : undefined,
+        vehicleId: vehicleId !== undefined ? (vehicleId ? parseInt(vehicleId) : null) : undefined
       });
       if (!updated) return res.status(404).json({ error: 'Delivery not found or access denied' });
 
@@ -1621,6 +1842,72 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
       if (!deleted) return res.status(404).json({ error: 'Delivery not found or access denied' });
 
       io.to(String(dbUserId)).emit('delivery_deleted', { id: deliveryId });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- ASSETS ENDPOINTS (biens & matériel du restaurant) ---
+  app.get('/api/assets', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUserId = req.query.dbUserId ? parseInt(req.query.dbUserId as string) : null;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const list = await getAssets(dbUserId);
+      res.json(list || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/assets', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dbUserId, name, category, quantity, condition, purchaseValue, photoUrl, notes } = req.body;
+      if (!dbUserId || !name) return res.status(400).json({ error: 'Missing dbUserId or name' });
+      const created = await createAsset(
+        parseInt(dbUserId), name, category || 'autre',
+        quantity !== undefined ? parseInt(quantity) : 1,
+        condition || 'bon',
+        purchaseValue !== undefined ? parseFloat(purchaseValue) : 0.0,
+        photoUrl || null, notes || null
+      );
+      io.to(String(dbUserId)).emit('asset_created', created);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/assets/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const assetId = parseInt(req.params.id);
+      const { dbUserId, name, category, quantity, condition, purchaseValue, photoUrl, notes } = req.body;
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const updated = await updateAsset(assetId, parseInt(dbUserId), {
+        name,
+        category: category !== undefined ? category : undefined,
+        quantity: quantity !== undefined ? parseInt(quantity) : undefined,
+        condition: condition !== undefined ? condition : undefined,
+        purchaseValue: purchaseValue !== undefined ? parseFloat(purchaseValue) : undefined,
+        photoUrl: photoUrl !== undefined ? (photoUrl || null) : undefined,
+        notes: notes !== undefined ? (notes || null) : undefined,
+      });
+      if (!updated) return res.status(404).json({ error: 'Asset not found or access denied' });
+      io.to(String(dbUserId)).emit('asset_updated', updated);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/assets/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const assetId = parseInt(req.params.id);
+      const dbUserId = parseInt(req.query.dbUserId as string);
+      if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
+      const deleted = await deleteAsset(assetId, dbUserId);
+      if (!deleted) return res.status(404).json({ error: 'Asset not found or access denied' });
+      io.to(String(dbUserId)).emit('asset_deleted', { id: assetId });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

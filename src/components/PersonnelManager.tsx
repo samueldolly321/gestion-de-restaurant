@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Personnel } from '../types.ts';
-import { Search, Plus, UserCheck, Shield, Phone, Mail, DollarSign, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, X, Calendar, Lock, FileText } from 'lucide-react';
+import { Personnel, Asset } from '../types.ts';
+import { Search, Plus, UserCheck, Shield, Phone, Mail, DollarSign, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, X, Calendar, Lock, FileText, Bike } from 'lucide-react';
 
 // Rôles prédéfinis ; tout autre valeur est un rôle personnalisé (« Autre »).
 const KNOWN_ROLES = ['serveur', 'cuisinier', 'chef_cuisinier', 'femme_menage', 'livreur', 'barman', 'manager'];
 
 interface PersonnelManagerProps {
   personnel: Personnel[];
+  assets: Asset[];
   userRole: string; // 'super_admin' or 'gerant'
   onAddStaff: (formData: any) => Promise<void>;
   onEditStaff: (id: number, formData: any) => Promise<void>;
@@ -15,6 +16,7 @@ interface PersonnelManagerProps {
 
 export default function PersonnelManager({
   personnel,
+  assets,
   userRole,
   onAddStaff,
   onEditStaff,
@@ -39,6 +41,10 @@ export default function PersonnelManager({
   const [avatarUrl, setAvatarUrl] = useState('');
   const [cvUrl, setCvUrl] = useState('');
   const [cvName, setCvName] = useState(''); // nom du fichier CV importé (affichage)
+  const [vehicleId, setVehicleId] = useState(''); // véhicule attaché (rôle livreur)
+
+  // Véhicules disponibles (biens de catégorie « Véhicule »).
+  const vehicles = assets.filter((a) => a.category === 'vehicule');
 
   const canAccessSalaries = userRole === 'super_admin';
 
@@ -68,6 +74,7 @@ export default function PersonnelManager({
     setAvatarUrl('');
     setCvUrl('');
     setCvName('');
+    setVehicleId('');
     setIsOpen(true);
   };
 
@@ -93,6 +100,7 @@ export default function PersonnelManager({
     setAvatarUrl(staff.avatarUrl || '');
     setCvUrl(staff.cvUrl || '');
     setCvName(staff.cvUrl ? 'CV enregistré' : '');
+    setVehicleId(staff.vehicleId != null ? String(staff.vehicleId) : '');
     setIsOpen(true);
   };
 
@@ -133,6 +141,8 @@ export default function PersonnelManager({
       leaveEndDate: leaveEndDate || null,
       avatarUrl: avatarUrl || null,
       cvUrl: cvUrl || null,
+      // Véhicule attaché : seulement pour un livreur (sinon on détache).
+      vehicleId: effectiveRole === 'livreur' && vehicleId ? Number(vehicleId) : null,
     };
 
     // Only update salary if user is Super Admin
@@ -277,6 +287,13 @@ export default function PersonnelManager({
                     <p className="flex items-center gap-1 text-[11px]">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
                       Embauché(e) le : <span className="font-mono text-slate-700 font-semibold">{staff.hireDate}</span>
+                    </p>
+                  )}
+
+                  {staff.role === 'livreur' && staff.vehicleId != null && (
+                    <p className="flex items-center gap-1 text-[11px] text-blue-700">
+                      <Bike className="w-3.5 h-3.5" />
+                      Véhicule : <span className="font-semibold">{assets.find((a) => a.id === staff.vehicleId)?.name || 'Véhicule'}</span>
                     </p>
                   )}
 
@@ -501,6 +518,29 @@ export default function PersonnelManager({
                   </select>
                 </div>
               </div>
+
+              {/* Véhicule attaché — visible uniquement pour un livreur */}
+              {role === 'livreur' && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3">
+                  <label className="block text-[11px] font-semibold text-blue-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Bike className="w-3.5 h-3.5" /> Véhicule attaché
+                  </label>
+                  {vehicles.length > 0 ? (
+                    <select
+                      value={vehicleId}
+                      onChange={(e) => setVehicleId(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-blue-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 outline-none text-slate-800 cursor-pointer"
+                    >
+                      <option value="">— Aucun véhicule —</option>
+                      {vehicles.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-[10px] text-slate-500">Aucun véhicule enregistré. Ajoutez-en un dans l'onglet <b>Biens &amp; Matériel</b> (catégorie Véhicule).</p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Delivery, Personnel, Order } from '../types.ts';
-import { Search, Plus, Edit2, Trash2, X, Truck, MapPin, Phone, Clock, User, Package, Calendar, Hash } from 'lucide-react';
+import { Delivery, Personnel, Order, Asset } from '../types.ts';
+import { Search, Plus, Edit2, Trash2, X, Truck, MapPin, Phone, Clock, User, Package, Calendar, Hash, Bike } from 'lucide-react';
 
 // Statuts de livraison (workflow simple).
 const DELIVERY_STATUSES: { value: string; label: string; badge: string }[] = [
@@ -14,6 +14,7 @@ interface DeliveriesManagerProps {
   deliveries: Delivery[];
   personnel: Personnel[];
   orders: Order[];
+  assets: Asset[];
   onAddDelivery: (formData: any) => Promise<void>;
   onEditDelivery: (id: number, formData: any) => Promise<void>;
   onDeleteDelivery: (id: number) => Promise<void>;
@@ -23,6 +24,7 @@ export default function DeliveriesManager({
   deliveries,
   personnel,
   orders,
+  assets,
   onAddDelivery,
   onEditDelivery,
   onDeleteDelivery,
@@ -41,9 +43,24 @@ export default function DeliveriesManager({
   const [driverName, setDriverName] = useState('');
   const [status, setStatus] = useState('en_preparation');
   const [notes, setNotes] = useState('');
+  const [vehicleId, setVehicleId] = useState(''); // véhicule ayant fait la livraison
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null); // détail de la commande liée
+
+  const formatAr = (amount: number) =>
+    new Intl.NumberFormat('fr-MG', { style: 'currency', currency: 'MGA', minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      .format(amount || 0).replace('MGA', 'Ar').trim();
 
   // Seuls les employés de rôle « livreur » peuvent être assignés à une livraison.
   const drivers = personnel.filter((p) => p.role === 'livreur');
+  // Véhicules disponibles (biens de catégorie « Véhicule »).
+  const vehicles = assets.filter((a) => a.category === 'vehicule');
+
+  // Quand on choisit un livreur, on propose automatiquement son véhicule attaché (s'il en a un).
+  const handleDriverChange = (name: string) => {
+    setDriverName(name);
+    const driver = drivers.find((p) => p.name === name);
+    if (driver?.vehicleId != null) setVehicleId(String(driver.vehicleId));
+  };
 
   // Commandes marquées « à livrer » — proposées comme numéro de commande à livrer.
   const deliverableOrders = orders.filter((o) => o.orderType === 'a_livrer');
@@ -63,6 +80,7 @@ export default function DeliveriesManager({
     setDriverName('');
     setStatus('en_preparation');
     setNotes('');
+    setVehicleId('');
     setIsOpen(true);
   };
 
@@ -77,6 +95,7 @@ export default function DeliveriesManager({
     setDriverName(d.driverName || '');
     setStatus(d.status);
     setNotes(d.notes || '');
+    setVehicleId(d.vehicleId != null ? String(d.vehicleId) : '');
     setIsOpen(true);
   };
 
@@ -92,6 +111,7 @@ export default function DeliveriesManager({
       driverName: driverName || null,
       status,
       notes: notes || null,
+      vehicleId: vehicleId ? Number(vehicleId) : null,
     };
     if (editing) {
       await onEditDelivery(editing.id, payload);
@@ -198,9 +218,21 @@ export default function DeliveriesManager({
                         </p>
                       </td>
                       <td className="py-4 px-6 text-xs text-slate-700">
-                        {d.orderId != null ? (
-                          <span className="flex items-center gap-1 font-mono font-bold text-slate-700"><Hash className="w-3 h-3 text-slate-400" />{d.orderId}</span>
-                        ) : (
+                        {d.orderId != null ? (() => {
+                          const linkedOrder = orders.find((o) => o.id === d.orderId);
+                          return linkedOrder ? (
+                            <button
+                              type="button"
+                              onClick={() => setViewingOrder(linkedOrder)}
+                              className="flex items-center gap-1 font-mono font-bold text-red-600 hover:text-red-500 hover:underline cursor-pointer"
+                              title="Voir le détail de la commande"
+                            >
+                              <Hash className="w-3 h-3" />{linkedOrder.reference || `#${d.orderId}`}
+                            </button>
+                          ) : (
+                            <span className="flex items-center gap-1 font-mono font-bold text-slate-700"><Hash className="w-3 h-3 text-slate-400" />#{d.orderId}</span>
+                          );
+                        })() : (
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
@@ -213,6 +245,9 @@ export default function DeliveriesManager({
                           <span className="flex items-center gap-1"><User className="w-3 h-3 text-slate-400" /> {d.driverName}</span>
                         ) : (
                           <span className="text-slate-300">Non assigné</span>
+                        )}
+                        {d.vehicleId != null && (
+                          <span className="flex items-center gap-1 mt-0.5 text-[10px] text-blue-700"><Bike className="w-3 h-3" /> {assets.find((a) => a.id === d.vehicleId)?.name || 'Véhicule'}</span>
                         )}
                       </td>
                       <td className="py-4 px-6">
@@ -333,7 +368,7 @@ export default function DeliveriesManager({
                   >
                     <option value="">— Aucune —</option>
                     {deliverableOrders.map((o) => (
-                      <option key={o.id} value={o.id}>#{o.id} — Table {o.tableNumber}</option>
+                      <option key={o.id} value={o.id}>{o.reference ? `Réf. ${o.reference}` : `#${o.id}`} — Table {o.tableNumber}</option>
                     ))}
                     {/* Conserve une commande liée qui ne serait plus « à livrer » */}
                     {orderId && !deliverableOrders.some((o) => String(o.id) === orderId) && (
@@ -360,23 +395,44 @@ export default function DeliveriesManager({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Livreur</label>
-                <select
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 cursor-pointer"
-                >
-                  <option value="">— Non assigné —</option>
-                  {drivers.map((d) => (
-                    <option key={d.id} value={d.name}>{d.name}</option>
-                  ))}
-                </select>
-                {drivers.length === 0 && (
-                  <p className="text-[10px] text-amber-600 mt-1">
-                    Aucun employé de rôle « Livreur ». Ajoutez-en un dans l'onglet Personnel.
-                  </p>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Livreur</label>
+                  <select
+                    value={driverName}
+                    onChange={(e) => handleDriverChange(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 cursor-pointer"
+                  >
+                    <option value="">— Non assigné —</option>
+                    {drivers.map((d) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                  {drivers.length === 0 && (
+                    <p className="text-[10px] text-amber-600 mt-1">
+                      Aucun employé de rôle « Livreur ». Ajoutez-en un dans l'onglet Personnel.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Bike className="w-3.5 h-3.5 text-slate-400" /> Véhicule
+                  </label>
+                  <select
+                    value={vehicleId}
+                    onChange={(e) => setVehicleId(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 cursor-pointer"
+                  >
+                    <option value="">— Aucun véhicule —</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                  {vehicles.length === 0 && (
+                    <p className="text-[10px] text-slate-400 mt-1">Ajoutez un véhicule dans « Biens &amp; Matériel ».</p>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -406,6 +462,82 @@ export default function DeliveriesManager({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modale : détail de la commande liée à la livraison */}
+      {viewingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4" onClick={() => setViewingOrder(null)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 text-left max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between sticky top-0 z-10">
+              <h3 className="font-display font-bold text-slate-900 flex items-center gap-2">
+                <Package className="w-4 h-4 text-red-600" />
+                Commande {viewingOrder.reference ? `Réf. ${viewingOrder.reference}` : `#${viewingOrder.id}`}
+              </h3>
+              <button onClick={() => setViewingOrder(null)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Infos générales */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-slate-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">Table</p>
+                  <p className="font-semibold text-slate-700">#{viewingOrder.tableNumber}</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">Type</p>
+                  <p className="font-semibold text-slate-700">{viewingOrder.orderType === 'a_livrer' ? '🚚 À livrer' : '🍽️ Sur place'}</p>
+                </div>
+                {viewingOrder.serverName && (
+                  <div className="bg-slate-50 rounded-xl px-3 py-2">
+                    <p className="text-[9px] text-slate-400 uppercase font-bold">Serveur</p>
+                    <p className="font-semibold text-slate-700">{viewingOrder.serverName}</p>
+                  </div>
+                )}
+                <div className="bg-slate-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">Statut</p>
+                  <p className="font-semibold text-slate-700">{viewingOrder.status === 'paye' ? '✅ Payé' : viewingOrder.status}</p>
+                </div>
+              </div>
+
+              {/* Liste des plats */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plats &amp; boissons</p>
+                {viewingOrder.items && viewingOrder.items.length > 0 ? (
+                  <div className="rounded-xl border border-slate-100 divide-y divide-slate-50">
+                    {viewingOrder.items.map((it) => (
+                      <div key={it.id ?? it.menuItemId} className="flex items-center justify-between px-3 py-2 text-xs">
+                        <span className="text-slate-600"><span className="font-bold text-slate-800">{it.quantity}×</span> {it.name || 'Article'}</span>
+                        <span className="font-mono text-slate-500">{formatAr(it.unitPrice * it.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">Aucun plat enregistré.</p>
+                )}
+              </div>
+
+              {/* Totaux */}
+              <div className="bg-red-50/60 border border-red-100 rounded-2xl px-4 py-3 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Addition (plats)</span>
+                  <span className="font-mono">{formatAr((viewingOrder.totalAmount || 0) - (viewingOrder.deliveryFee || 0))}</span>
+                </div>
+                {viewingOrder.orderType === 'a_livrer' && (viewingOrder.deliveryFee || 0) > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-blue-600 font-semibold">
+                    <span>+ Livraison</span>
+                    <span className="font-mono">{formatAr(viewingOrder.deliveryFee || 0)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-red-100">
+                  <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Total</span>
+                  <span className="text-lg font-black text-red-600 font-mono">{formatAr(viewingOrder.totalAmount || 0)}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

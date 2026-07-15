@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Order, MenuItem, Personnel } from '../types.ts';
-import { Search, Plus, Minus, CreditCard, ChevronLeft, ChevronRight, Edit2, Trash2, X, ShoppingBag, ArrowRight, CheckCircle, Wallet, Smartphone, Coins, UtensilsCrossed, Printer } from 'lucide-react';
+import { Order, MenuItem, Personnel, Client } from '../types.ts';
+import { Search, Plus, Minus, CreditCard, ChevronLeft, ChevronRight, Edit2, Trash2, X, ShoppingBag, ArrowRight, CheckCircle, Wallet, Smartphone, Coins, UtensilsCrossed, Printer, Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 // Ligne de commande locale (plat/boisson choisi pour la table)
@@ -16,6 +16,7 @@ interface OrdersManagerProps {
   orders: Order[];
   menuItems: MenuItem[];
   personnel: Personnel[];
+  clients: Client[];
   restaurantName?: string | null;
   onAddOrder: (formData: any) => Promise<void>;
   onEditOrder: (id: number, formData: any) => Promise<void>;
@@ -26,12 +27,15 @@ export default function OrdersManager({
   orders,
   menuItems,
   personnel,
+  clients,
   restaurantName,
   onAddOrder,
   onEditOrder,
   onDeleteOrder
 }: OrdersManagerProps) {
-  const [searchTable, setSearchTable] = useState('');
+  const [search, setSearch] = useState(''); // recherche : n° table, serveur, plat, paiement
+  const [filterDate, setFilterDate] = useState(''); // filtre par date de commande (YYYY-MM-DD)
+  const [expandedStatus, setExpandedStatus] = useState<string | null>(null); // vue plein écran d'un statut
   const [isOpen, setIsOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
@@ -49,6 +53,11 @@ export default function OrdersManager({
   const [serverName, setServerName] = useState('');
   const [orderType, setOrderType] = useState('sur_place'); // 'sur_place' ou 'a_livrer'
   const [taxRate, setTaxRate] = useState(0); // taux de TVA en % (prix TTC)
+  const [clientId, setClientId] = useState(''); // client fidélité rattaché ('' = client de passage)
+  const [deliveryFee, setDeliveryFee] = useState(0); // frais de livraison (commande à livrer)
+
+  // Frais de livraison proposés (Ar).
+  const DELIVERY_FEES = [3000, 4000, 5000, 6000, 7000, 8000];
 
   // Seuls les employés au rôle "serveur" peuvent prendre une commande.
   const serverOptions = personnel.filter((p) => p.role === 'serveur');
@@ -143,6 +152,8 @@ export default function OrdersManager({
     setServerName('');
     setOrderType('sur_place');
     setTaxRate(0);
+    setClientId('');
+    setDeliveryFee(0);
     setIsOpen(true);
   };
 
@@ -164,6 +175,8 @@ export default function OrdersManager({
     setServerName(order.serverName || '');
     setOrderType(order.orderType || 'sur_place');
     setTaxRate(order.taxRate || 0);
+    setClientId(order.clientId != null ? String(order.clientId) : '');
+    setDeliveryFee(order.deliveryFee || 0);
     setIsOpen(true);
   };
 
@@ -188,6 +201,8 @@ export default function OrdersManager({
       serverName: serverName || null,
       orderType,
       taxRate,
+      clientId: clientId ? Number(clientId) : null,
+      deliveryFee: orderType === 'a_livrer' ? Number(deliveryFee) || 0 : 0,
       items: items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, unitPrice: i.unitPrice })),
     };
     if (editingOrder) {
@@ -281,9 +296,20 @@ export default function OrdersManager({
     win.focus();
   };
 
-  const filteredOrders = orders.filter(o =>
-    searchTable === '' || String(o.tableNumber).includes(searchTable)
-  );
+  // Filtre : recherche texte (n° table, serveur, plat, moyen de paiement) + date de commande.
+  const q = search.trim().toLowerCase();
+  const filteredOrders = orders.filter((o) => {
+    const matchText =
+      q === '' ||
+      String(o.tableNumber).includes(q) ||
+      (o.serverName || '').toLowerCase().includes(q) ||
+      (o.paymentMethod || '').toLowerCase().includes(q) ||
+      getPaymentLabel(o.paymentMethod).toLowerCase().includes(q) ||
+      (o.items || []).some((it) => (it.name || '').toLowerCase().includes(q));
+    const d = (o.createdAt || '').slice(0, 10);
+    const matchDate = !filterDate || d === filterDate;
+    return matchText && matchDate;
+  });
 
   const columns = [
     { key: 'en_attente', title: 'En attente', color: 'border-t-amber-500 bg-amber-50/20 text-amber-800' },
@@ -296,15 +322,31 @@ export default function OrdersManager({
     <div className="space-y-6 text-left">
       {/* Search and Action Row */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-3xs">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="number"
-            placeholder="Filtrer par numéro de Table..."
-            value={searchTable}
-            onChange={(e) => setSearchTable(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800 font-mono"
-          />
+        <div className="flex flex-1 flex-col sm:flex-row gap-2 max-w-2xl">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Rechercher : n° table, serveur, plat, paiement..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800"
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-700 font-mono"
+              title="Filtrer par date de commande"
+            />
+            {(search || filterDate) && (
+              <button type="button" onClick={() => { setSearch(''); setFilterDate(''); }} className="p-1.5 text-slate-300 hover:text-red-600 cursor-pointer" title="Réinitialiser les filtres">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         <button
@@ -315,23 +357,32 @@ export default function OrdersManager({
         </button>
       </div>
 
-      {/* Kanban swimlanes list */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-        {columns.map((col) => {
+      {/* Kanban swimlanes list (ou vue plein écran d'un statut au clic sur son titre) */}
+      <div className={expandedStatus ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start'}>
+        {(expandedStatus ? columns.filter((c) => c.key === expandedStatus) : columns).map((col) => {
           const colOrders = filteredOrders.filter(o => o.status === col.key);
+          const isExpanded = expandedStatus === col.key;
 
           return (
-            <div key={col.key} className="bg-slate-50/40 rounded-3xl border border-slate-100 p-4 flex flex-col h-[570px] shadow-3xs">
-              {/* Column Header */}
-              <div className={`p-3 rounded-xl border-t-3 ${col.color} mb-3 flex items-center justify-between shadow-2xs`}>
-                <span className="text-xs font-extrabold uppercase tracking-wider">{col.title}</span>
+            <div key={col.key} className={`bg-slate-50/40 rounded-3xl border border-slate-100 p-4 flex flex-col ${isExpanded ? '' : 'h-[570px]'} shadow-3xs`}>
+              {/* Column Header (cliquable : plein écran / réduire) */}
+              <button
+                type="button"
+                onClick={() => setExpandedStatus(isExpanded ? null : col.key)}
+                className={`p-3 rounded-xl border-t-3 ${col.color} mb-3 flex items-center justify-between shadow-2xs w-full cursor-pointer hover:brightness-95 transition-all`}
+                title={isExpanded ? 'Revenir au tableau' : 'Voir toutes ces commandes en plein écran'}
+              >
+                <span className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                  {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5 opacity-60" />}
+                  {col.title}
+                </span>
                 <span className="text-[11px] font-mono font-bold bg-white/80 border border-slate-100 px-2 py-0.5 rounded-lg text-slate-700">
                   {colOrders.length}
                 </span>
-              </div>
+              </button>
 
               {/* Column Orders list */}
-              <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+              <div className={isExpanded ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start' : 'flex-1 overflow-y-auto space-y-3 min-h-0'}>
                 {colOrders.length === 0 ? (
                   <div className="py-12 text-center text-slate-300">
                     <ShoppingBag className="w-6 h-6 mx-auto opacity-50 mb-1" />
@@ -352,12 +403,17 @@ export default function OrdersManager({
                             Table #{order.tableNumber}
                           </span>
                           <span className="text-[10px] font-mono text-slate-400">
-                            #{order.id}
+                            {order.reference ? `Réf. ${order.reference}` : `#${order.id}`}
                           </span>
                         </div>
                         {order.serverName && (
                           <p className="text-[10px] text-slate-500 mt-0.5 truncate">
                             Servi par <span className="font-semibold text-slate-700">{order.serverName}</span>
+                          </p>
+                        )}
+                        {order.clientId != null && (
+                          <p className="text-[10px] text-emerald-600 mt-0.5 truncate font-semibold">
+                            ⭐ {clients.find((c) => c.id === order.clientId)?.name || 'Client'}
                           </p>
                         )}
                         <span className={`inline-block mt-1 text-[9px] px-2 py-0.5 border rounded-lg font-bold ${
@@ -475,10 +531,10 @@ export default function OrdersManager({
       {/* Add / Edit modal - Wider Width (max-w-xl md:max-w-2xl) */}
       {isOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative text-left">
+          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative text-left max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setIsOpen(false)}
-              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer"
+              className="sticky top-0 float-right -mt-2 -mr-2 p-1.5 bg-white/90 backdrop-blur text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer z-10"
             >
               <X className="w-4 h-4" />
             </button>
@@ -565,6 +621,24 @@ export default function OrdersManager({
                   <div className="w-full px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-700 font-semibold">
                     Aucun employé au rôle « Serveur ». Ajoutez-en un dans l'onglet Personnel pour pouvoir prendre une commande.
                   </div>
+                )}
+              </div>
+
+              {/* Client (fidélité) — facultatif : +1 point à la création de la commande */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Client (fidélité)</label>
+                <select
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 cursor-pointer"
+                >
+                  <option value="">— Client de passage (aucun) —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} — {c.loyaltyPoints} pt{c.loyaltyPoints > 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+                {!editingOrder && clientId && (
+                  <p className="text-[10px] text-emerald-600 mt-1 font-semibold">⭐ +1 point de fidélité sera attribué à ce client.</p>
                 )}
               </div>
 
@@ -678,6 +752,25 @@ export default function OrdersManager({
                 </div>
               </div>
 
+              {/* Frais de livraison — uniquement pour une commande à livrer */}
+              {orderType === 'a_livrer' && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-2xl px-4 py-3">
+                  <label className="block text-[11px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    🚚 Frais de livraison
+                  </label>
+                  <select
+                    value={deliveryFee}
+                    onChange={(e) => setDeliveryFee(Number(e.target.value))}
+                    className="w-full px-3.5 py-2 bg-white border border-blue-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 outline-none text-slate-800 cursor-pointer font-mono"
+                  >
+                    <option value={0}>— Aucun —</option>
+                    {DELIVERY_FEES.map((f) => (
+                      <option key={f} value={f}>{formatAr(f)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Total dynamique de l'addition */}
               <div className="bg-red-50/60 border border-red-100 rounded-2xl px-4 py-3 space-y-1.5">
                 {taxRate > 0 && (
@@ -692,12 +785,22 @@ export default function OrdersManager({
                     </div>
                   </>
                 )}
-                <div className="flex items-center justify-between pt-0.5">
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Total Addition {taxRate > 0 ? 'TTC' : ''} (calcul automatique)</span>
-                    <span className="text-[9px] text-slate-400 font-semibold">{items.reduce((n, i) => n + i.quantity, 0)} article(s) sur la table</span>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                  <span>Addition (plats {taxRate > 0 ? 'TTC' : ''})</span>
+                  <span className="font-mono">{formatAr(computedTotal)}</span>
+                </div>
+                {orderType === 'a_livrer' && Number(deliveryFee) > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-blue-600 font-semibold">
+                    <span>+ Livraison</span>
+                    <span className="font-mono">{formatAr(Number(deliveryFee))}</span>
                   </div>
-                  <span className="text-lg font-black text-red-600 font-mono">{formatAr(computedTotal)}</span>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-red-100">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Total à payer</span>
+                    <span className="text-[9px] text-slate-400 font-semibold">{items.reduce((n, i) => n + i.quantity, 0)} article(s){orderType === 'a_livrer' && Number(deliveryFee) > 0 ? ' + livraison' : ''}</span>
+                  </div>
+                  <span className="text-lg font-black text-red-600 font-mono">{formatAr(computedTotal + (orderType === 'a_livrer' ? Number(deliveryFee) || 0 : 0))}</span>
                 </div>
               </div>
 
