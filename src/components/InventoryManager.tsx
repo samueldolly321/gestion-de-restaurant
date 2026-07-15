@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Package, Truck, AlertTriangle, CheckCircle, Search, Plus, Edit2, Trash2, X, Utensils, History, ClipboardList, ChevronDown, ChevronRight } from 'lucide-react';
 import { Supplier, Stock, MenuItem, StockMovement, SupplierOrder, SupplierProduct } from '../types.ts';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 // Une ligne du formulaire de commande fournisseur (modèle multi-articles).
 // stockId : id de l'article de stock lié, '' = aucun, '__new__' = créer un nouvel article.
@@ -439,6 +440,19 @@ export default function InventoryManager({
     return matchText && matchDate;
   });
 
+  // Pagination des stocks (20 par page).
+  const stockPg = usePagination(filteredStocks, 20);
+
+  // Commandes fournisseurs filtrées/triées (au niveau composant pour la pagination).
+  const orderRows = supplierOrders
+    .filter((o) => !orderSupplierFilter || o.supplierId === Number(orderSupplierFilter))
+    .filter((o) => {
+      const d = o.orderDate || (o.createdAt || '').slice(0, 10);
+      return (!orderDateFrom || d >= orderDateFrom) && (!orderDateTo || d <= orderDateTo);
+    })
+    .sort((a, b) => (b.orderDate || b.createdAt || '').localeCompare(a.orderDate || a.createdAt || ''));
+  const orderPg = usePagination(orderRows, 20);
+
   const filteredSuppliers = suppliers.filter((sup) =>
     sup.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -587,7 +601,7 @@ export default function InventoryManager({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-xs text-slate-700">
-                  {filteredStocks.map((s) => {
+                  {stockPg.pageItems.map((s) => {
                     const isBelowMin = s.quantity < s.minStock;
                     const matchedSup = suppliers.find((sup) => sup.id === s.supplierId);
 
@@ -677,6 +691,9 @@ export default function InventoryManager({
                 </tbody>
               </table>
             )}
+          </div>
+          <div className="px-6 pb-4">
+            <Pagination page={stockPg.page} totalPages={stockPg.totalPages} total={stockPg.total} rangeStart={stockPg.rangeStart} rangeEnd={stockPg.rangeEnd} onPageChange={stockPg.setPage} />
           </div>
         </div>
         </>
@@ -788,13 +805,7 @@ export default function InventoryManager({
           </div>
 
           {(() => {
-            const rows = supplierOrders
-              .filter((o) => !orderSupplierFilter || o.supplierId === Number(orderSupplierFilter))
-              .filter((o) => {
-                const d = o.orderDate || (o.createdAt || '').slice(0, 10);
-                return (!orderDateFrom || d >= orderDateFrom) && (!orderDateTo || d <= orderDateTo);
-              })
-              .sort((a, b) => (b.orderDate || b.createdAt || '').localeCompare(a.orderDate || a.createdAt || ''));
+            const rows = orderRows;
             const totalOrdered = rows.reduce((s, o) => s + (o.amount || 0), 0);
             const totalDue = rows.filter((o) => o.paymentStatus !== 'paye').reduce((s, o) => s + (o.amount || 0), 0);
 
@@ -839,7 +850,7 @@ export default function InventoryManager({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 text-xs text-slate-700">
-                        {rows.map((o) => {
+                        {orderPg.pageItems.map((o) => {
                           const items = o.items || [];
                           const hasStockLink = items.some((it) => it.stockId != null);
                           const isExpanded = expandedOrderId === o.id;
@@ -945,6 +956,9 @@ export default function InventoryManager({
                         })}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="px-6 pb-4">
+                    <Pagination page={orderPg.page} totalPages={orderPg.totalPages} total={orderPg.total} rangeStart={orderPg.rangeStart} rangeEnd={orderPg.rangeEnd} onPageChange={orderPg.setPage} />
                   </div>
                 </div>
               </>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Delivery, Personnel, Order, Asset } from '../types.ts';
 import { Search, Plus, Edit2, Trash2, X, Truck, MapPin, Phone, Clock, User, Package, Calendar, Hash, Bike } from 'lucide-react';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 // Statuts de livraison (workflow simple).
 const DELIVERY_STATUSES: { value: string; label: string; badge: string }[] = [
@@ -128,6 +129,7 @@ export default function DeliveriesManager({
       (d.clientPhone || '').toLowerCase().includes(search.toLowerCase()) ||
       (d.driverName || '').toLowerCase().includes(search.toLowerCase())
   );
+  const pg = usePagination(filtered, 20);
 
   // Totaux (livraisons en cours = ni livrées, ni annulées)
   const enCours = deliveries.filter((d) => d.status === 'en_preparation' || d.status === 'en_route').length;
@@ -199,7 +201,7 @@ export default function DeliveriesManager({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((d) => {
+                {pg.pageItems.map((d) => {
                   const st = getStatus(d.status);
                   return (
                     <tr key={d.id} className="hover:bg-slate-50/60 transition-colors">
@@ -280,6 +282,9 @@ export default function DeliveriesManager({
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="px-6 pb-4">
+            <Pagination page={pg.page} totalPages={pg.totalPages} total={pg.total} rangeStart={pg.rangeStart} rangeEnd={pg.rangeEnd} onPageChange={pg.setPage} />
           </div>
         </div>
       )}

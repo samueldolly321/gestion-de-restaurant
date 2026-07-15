@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Income, Order } from '../types.ts';
 import { Search, Plus, Edit2, Trash2, X, TrendingUp, Wallet, Calendar, Image as ImageIcon, ShoppingBag, Lock } from 'lucide-react';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 // Catégories de rentrées d'argent.
 const INCOME_CATEGORIES: { value: string; label: string }[] = [
@@ -147,6 +148,9 @@ export default function IncomeManager({ incomes, orders, onAddIncome, onEditInco
     )
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
+  // Pagination (20 par page).
+  const pg = usePagination(allRows, 20);
+
   // Totaux
   const monthPrefix = new Date().toISOString().slice(0, 7);
   const inMonth = (d: string) => (d || '').slice(0, 7) === monthPrefix;
@@ -229,7 +233,7 @@ export default function IncomeManager({ incomes, orders, onAddIncome, onEditInco
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {allRows.map((r) => (
+                {pg.pageItems.map((r) => (
                   <tr key={r.key} className={`hover:bg-slate-50/60 transition-colors ${r.auto ? 'bg-emerald-50/20' : ''}`}>
                     <td className="py-4 px-6 text-xs font-mono text-slate-400">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {r.date || '—'}</span>
@@ -272,6 +276,9 @@ export default function IncomeManager({ incomes, orders, onAddIncome, onEditInco
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="px-6 pb-4">
+            <Pagination page={pg.page} totalPages={pg.totalPages} total={pg.total} rangeStart={pg.rangeStart} rangeEnd={pg.rangeEnd} onPageChange={pg.setPage} />
           </div>
         </div>
       )}

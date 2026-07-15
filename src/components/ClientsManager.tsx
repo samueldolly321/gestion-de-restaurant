@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Client } from '../types.ts';
 import { Search, Plus, Award, Mail, Phone, FileText, Trash2, Edit2, X, Users } from 'lucide-react';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 interface ClientsManagerProps {
   clients: Client[];
@@ -69,6 +70,7 @@ export default function ClientsManager({
     (c.phone && c.phone.includes(search)) ||
     (c.email && c.email.toLowerCase().includes(search.toLowerCase()))
   );
+  const pg = usePagination(filteredClients, 20);
 
   return (
     <div className="space-y-6 text-left">
@@ -101,8 +103,9 @@ export default function ClientsManager({
           <p className="text-[10px] text-slate-400 mt-1">Commencez par ajouter votre premier client ci-dessus.</p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredClients.map((client) => (
+          {pg.pageItems.map((client) => (
             <div key={client.id} className="bg-white rounded-3xl border border-slate-100 p-5 shadow-3xs flex flex-col justify-between hover:border-red-100 transition-all text-left relative overflow-hidden group">
               {/* Decorative background circle */}
               <div className="absolute top-0 right-0 w-24 h-24 bg-red-50/20 rounded-bl-full pointer-events-none transition-all group-hover:scale-110" />
@@ -175,6 +178,8 @@ export default function ClientsManager({
             </div>
           ))}
         </div>
+        <Pagination page={pg.page} totalPages={pg.totalPages} total={pg.total} rangeStart={pg.rangeStart} rangeEnd={pg.rangeEnd} onPageChange={pg.setPage} />
+        </>
       )}
 
       {/* Add / Edit modal */}

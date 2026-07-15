@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Asset } from '../types.ts';
 import { Package, Armchair, Tv, Bike, Shirt, Plus, Search, Edit2, Trash2, X, Image as ImageIcon } from 'lucide-react';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 interface AssetsManagerProps {
   assets: Asset[];
@@ -105,6 +106,7 @@ export default function AssetsManager({ assets, onAddAsset, onEditAsset, onDelet
     const matchCat = !categoryFilter || a.category === categoryFilter;
     return matchText && matchCat;
   });
+  const pg = usePagination(filtered, 20);
 
   const totalUnits = assets.reduce((s, a) => s + (a.quantity || 0), 0);
   const totalValue = assets.reduce((s, a) => s + (a.purchaseValue || 0) * (a.quantity || 1), 0);
@@ -175,8 +177,9 @@ export default function AssetsManager({ assets, onAddAsset, onEditAsset, onDelet
           <p className="text-[10px] text-slate-400 mt-1">Cliquez sur « Ajouter un bien » pour commencer votre inventaire.</p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((a) => {
+          {pg.pageItems.map((a) => {
             const cat = categoryMeta(a.category);
             const cond = conditionMeta(a.condition);
             const CatIcon = cat.icon;
@@ -222,6 +225,8 @@ export default function AssetsManager({ assets, onAddAsset, onEditAsset, onDelet
             );
           })}
         </div>
+        <Pagination page={pg.page} totalPages={pg.totalPages} total={pg.total} rangeStart={pg.rangeStart} rangeEnd={pg.rangeEnd} onPageChange={pg.setPage} />
+        </>
       )}
 
       {/* Modale ajout / édition */}

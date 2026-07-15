@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Expense, RecurringExpense } from '../types.ts';
 import { Search, Plus, Edit2, Trash2, X, Receipt, TrendingDown, Calendar, FileText, Image as ImageIcon, Repeat } from 'lucide-react';
+import { usePagination, Pagination } from './Pagination.tsx';
 
 // Catégories de dépenses diverses (loyer, charges, achats...).
 const EXPENSE_CATEGORIES: { value: string; label: string }[] = [
@@ -155,6 +156,9 @@ export default function ExpensesManager({
       getCategoryLabel(e.category).toLowerCase().includes(search.toLowerCase())
   );
 
+  // Pagination (20 par page).
+  const pg = usePagination(filtered, 20);
+
   // Totaux
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const totalAll = filtered.reduce((s, e) => s + (e.amount || 0), 0);
@@ -236,7 +240,7 @@ export default function ExpensesManager({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((exp) => (
+                {pg.pageItems.map((exp) => (
                   <tr key={exp.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-6">
                       {exp.imageUrl ? (
@@ -301,6 +305,9 @@ export default function ExpensesManager({
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="px-6 pb-4">
+            <Pagination page={pg.page} totalPages={pg.totalPages} total={pg.total} rangeStart={pg.rangeStart} rangeEnd={pg.rangeEnd} onPageChange={pg.setPage} />
           </div>
         </div>
       )}
