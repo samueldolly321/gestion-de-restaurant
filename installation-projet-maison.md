@@ -2,7 +2,9 @@
 
 Guide **pas à pas**, écrit pour un **développeur junior** : chaque étape a la commande exacte à taper. À la fin, l'application tournera sur **http://localhost:3000**.
 
-> Ce fichier utilise **exactement les valeurs de config qu'on utilise déjà** (base `chefsuite`, utilisateur `user` / mot de passe `user`). Si tu recopies tout tel quel, ça marche. Tu pourras changer les mots de passe plus tard si tu veux.
+> 📌 **Ce guide est pour le cas « dossier copié sur clé USB »** (copier-coller, pas de `git clone`). Comme tu as copié le dossier, tes fichiers de config (`.env`, Firebase) sont **déjà dedans** — c'est plus rapide que depuis GitHub.
+>
+> Il utilise **exactement les valeurs de config qu'on utilise déjà** (base `chefsuite`, utilisateur `user` / mot de passe `user`).
 
 ---
 
@@ -10,11 +12,11 @@ Guide **pas à pas**, écrit pour un **développeur junior** : chaque étape a l
 
 | Outil | À quoi ça sert | Obligatoire ? |
 |---|---|---|
-| **Git** | Récupérer le code depuis GitHub | ✅ Oui |
 | **Node.js 20** | Faire tourner l'app (front + back) | ✅ Oui |
 | **PostgreSQL 16** | La base de données (toutes les données du resto) | ✅ Oui |
 | **Un compte Firebase** | Les connexions (e-mail + mot de passe) | ✅ Oui (sauf si tu utilises seulement le bouton « Accès test ») |
-| **Une clé Gemini** | L'onglet « Analyses IA » | ❌ Optionnel |
+| **Git** | Récupérer les futures mises à jour / pousser tes modifs | ❌ Optionnel (le code est déjà sur la clé) |
+| **Une clé Gemini** | L'onglet « Analyses IA » | ❌ Optionnel (déjà dans le `.env` copié) |
 
 Le front (React) **et** le back (Express) tournent **ensemble** sur un seul serveur : `http://localhost:3000`.
 
@@ -31,7 +33,8 @@ Le front (React) **et** le back (Express) tournent **ensemble** sur un seul serv
    npm --version
    ```
 
-### 1.2 Git
+### 1.2 Git — *optionnel*
+Le code est déjà sur ta clé USB, donc **Git n'est pas nécessaire** pour lancer l'app. Installe-le seulement si tu veux **récupérer les mises à jour** depuis GitHub (`git pull`) ou **pousser tes modifs** plus tard.
 1. Va sur https://git-scm.com/download/win → installe.
 2. Vérifie :
    ```powershell
@@ -51,23 +54,30 @@ Le front (React) **et** le back (Express) tournent **ensemble** sur un seul serv
 
 ---
 
-## 2. Récupérer le projet
+## 2. Copier le projet depuis la clé USB
 
-Choisis un dossier où mettre le projet (ex. `D:\perso\projet`), puis :
+Tu as le dossier du projet sur une **clé USB** (copier-coller). Fais ceci :
 
-```powershell
-cd D:\perso\projet
-git clone https://github.com/samueldolly321/gestion-de-restaurant.git
-cd gestion-de-restaurant
-```
+1. Branche la clé USB. **Copie** le dossier `gestion-de-restaurant` vers un emplacement de **ton disque dur** (ex. `D:\perso\projet\`).
+   > ⚠️ Ne travaille **pas** directement depuis la clé USB (trop lent et peu fiable) : copie-le sur le disque.
 
-Installe les librairies (React, Express, Drizzle, etc.) :
-```powershell
-npm install
-```
-⏳ 1 à 3 minutes la première fois. C'est normal.
+2. Ouvre **PowerShell** dans le dossier copié :
+   ```powershell
+   cd D:\perso\projet\gestion-de-restaurant
+   ```
 
-> ℹ️ **Deux fichiers de secrets ne sont PAS sur GitHub** (ils sont ignorés par git) : `.env` et `firebase-applet-config.json`. Tu vas les **créer toi-même** aux étapes 4 et 5.
+3. **Réinstalle les dépendances proprement.** Le dossier `node_modules` copié d'un autre PC peut être **incompatible** (certaines librairies sont compilées pour une machine précise). On le supprime et on réinstalle :
+   ```powershell
+   Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
+   npm install
+   ```
+   ⏳ 1 à 3 minutes. C'est normal.
+
+> ✅ **Bonne nouvelle : tes fichiers secrets sont déjà là.** Comme tu as **copié le dossier** (et non cloné depuis GitHub), les fichiers `.env` et `firebase-applet-config.json` — qui contiennent la config base de données, Firebase et la **clé Gemini** — ont été **copiés avec le dossier**. Tu n'as donc **pas à les recréer** : il suffit de **vérifier** leurs valeurs (étapes 4 et 5).
+>
+> ⚠️ Si tu ne les vois **pas** dans le dossier : soit ils étaient masqués et non copiés (active « Afficher les fichiers cachés » dans l'Explorateur), soit il faut les recréer à partir des modèles `.env.example` / `firebase-applet-config.example.json` (voir étapes 4 et 5 en variante).
+>
+> ⚠️ La **base de données PostgreSQL n'est PAS dans le dossier** (elle vit ailleurs sur l'ordinateur). Tu dois quand même faire l'**étape 3** (installer Postgres + créer la base) sur cette machine.
 
 ---
 
@@ -104,16 +114,14 @@ On crée la base **`chefsuite`** et l'utilisateur **`user`** (mot de passe `user
 
 ---
 
-## 4. Créer le fichier `.env`
+## 4. Vérifier le fichier `.env` (déjà copié)
 
-À la **racine du projet** (`gestion-de-restaurant`), crée un fichier nommé **`.env`**.
-Le plus simple, copier le modèle puis l'éditer :
+Le fichier **`.env`** a été copié avec le dossier. **Ouvre-le** pour vérifier que ses valeurs correspondent à la base créée à l'étape 3 :
 ```powershell
-Copy-Item .env.example .env
 notepad .env
 ```
 
-Remplace **tout** le contenu par ceci (valeurs maison) :
+Il doit contenir (ce sont les valeurs maison) :
 ```env
 # URL de l'application
 APP_URL="http://localhost:3000"
@@ -131,55 +139,52 @@ SQL_ADMIN_PASSWORD="user"
 # Bouton "Accès test (Admin)" sans Firebase (pratique en local)
 ENABLE_TEST_LOGIN="true"
 
-# Clé API Gemini pour les analyses IA — OPTIONNEL (laisser vide si non utilisé)
-GEMINI_API_KEY=""
+# Clé API Gemini pour les analyses IA (déjà présente si tu as copié le dossier)
+GEMINI_API_KEY="..."
 ```
-Enregistre et ferme.
 
-> ⚠️ Le `.env` contient des secrets : ne le mets jamais sur GitHub (il est déjà dans `.gitignore`).
-> 🔑 **La clé Gemini n'est pas sur GitHub** : si tu veux l'IA, remets ta clé ici (voir étape 8).
+- ✅ Si les 4 lignes `SQL_*` correspondent bien à la base de l'étape 3 (`chefsuite`, `user`/`user`) → rien à changer.
+- 🔑 La **clé Gemini** est déjà là (elle était dans le `.env` copié) → l'IA marchera directement.
+- ⚠️ **Si le fichier `.env` est absent** (pas copié) : crée-le avec `Copy-Item .env.example .env`, puis colle le contenu ci-dessus (et remets ta clé Gemini si tu veux l'IA).
+
+> Le `.env` contient des secrets : ne le mets jamais sur GitHub (il est déjà dans `.gitignore`).
 
 ---
 
-## 5. Configurer Firebase (les comptes / la connexion)
+## 5. Vérifier la config Firebase (déjà copiée)
 
-L'app utilise **Firebase Authentication** (e-mail + mot de passe). Si tu veux seulement tester vite fait, tu peux **sauter cette étape** et utiliser le bouton **« Accès test (Admin) »** à l'étape 7 (grâce à `ENABLE_TEST_LOGIN="true"`). Mais pour créer de vrais comptes, fais ceci :
-
-### 5.1 Créer le projet Firebase
-1. Va sur https://console.firebase.google.com/ (connecte-toi avec un compte Google).
-2. **« Ajouter un projet »** → nom `chefsuite-local` → tu peux désactiver Google Analytics → **Créer**.
-
-### 5.2 Activer E-mail / Mot de passe
-1. Menu de gauche → **Authentication** (ou cherche `Authentication` dans la barre de recherche).
-2. **« Commencer »** → onglet **« Sign-in method »**.
-3. **« Ajouter un fournisseur »** → **« Adresse e-mail/Mot de passe »**.
-4. **Active le premier interrupteur** (laisse le 2ᵉ « lien e-mail » désactivé) → **Enregistrer**.
-
-### 5.3 Récupérer la config Web
-1. Engrenage ⚙️ (en haut à gauche) → **« Paramètres du projet »**.
-2. Section **« Vos applications »** → icône **Web `</>`**.
-3. Pseudo `chefsuite-web` → **ne coche pas** « Firebase Hosting » → **Enregistrer**.
-4. Firebase affiche un bloc `firebaseConfig` : garde-le ouvert, tu vas copier ces valeurs.
-
-### 5.4 Coller la config dans le projet
+Le fichier **`firebase-applet-config.json`** a été copié avec le dossier → **normalement, rien à faire**. Vérifie juste qu'il est bien présent à la racine :
 ```powershell
-Copy-Item firebase-applet-config.example.json firebase-applet-config.json
-notepad firebase-applet-config.json
+Get-Content firebase-applet-config.json
 ```
-Remplace par **tes** valeurs (format JSON, guillemets doubles, pas de `const`) :
-```json
-{
-  "apiKey": "AIza........",
-  "authDomain": "chefsuite-local.firebaseapp.com",
-  "projectId": "chefsuite-local",
-  "storageBucket": "chefsuite-local.firebasestorage.app",
-  "messagingSenderId": "1234567890",
-  "appId": "1:1234567890:web:abcdef123456"
-}
-```
-Enregistre.
+S'il affiche un bloc JSON avec `apiKey`, `projectId`, etc. → ✅ c'est bon, passe à l'étape 6.
 
-> ℹ️ Pas besoin de clé privée. Le serveur vérifie juste les jetons via le `projectId` → **Internet requis** pour Firebase.
+> ℹ️ Le même projet Firebase est utilisé (c'est un service **en ligne** de Google) : ta config copiée continue de marcher depuis n'importe quel ordinateur. Il faut juste **Internet**.
+>
+> 💡 Pour juste tester sans créer de comptes, tu peux même ignorer Firebase et utiliser le bouton **« Accès test (Admin) »** à l'étape 7 (grâce à `ENABLE_TEST_LOGIN="true"`).
+
+### ⚠️ Variante — si le fichier `firebase-applet-config.json` est **absent**
+Il n'a pas été copié : recrée-le.
+1. Va sur https://console.firebase.google.com/ → ton projet **`chefsuite-local`** (ou crée-en un).
+2. **Authentication** → active **Adresse e-mail/Mot de passe** (1er interrupteur) → Enregistrer.
+3. Engrenage ⚙️ → **Paramètres du projet** → section **Vos applications** → app **Web `</>`** → copie le bloc `firebaseConfig`.
+4. Crée le fichier et colle tes valeurs (format JSON, guillemets doubles) :
+   ```powershell
+   Copy-Item firebase-applet-config.example.json firebase-applet-config.json
+   notepad firebase-applet-config.json
+   ```
+   ```json
+   {
+     "apiKey": "AIza........",
+     "authDomain": "chefsuite-local.firebaseapp.com",
+     "projectId": "chefsuite-local",
+     "storageBucket": "chefsuite-local.firebasestorage.app",
+     "messagingSenderId": "1234567890",
+     "appId": "1:1234567890:web:abcdef123456"
+   }
+   ```
+
+> Pas besoin de clé privée. Le serveur vérifie les jetons via le `projectId` → **Internet requis**.
 
 ---
 
