@@ -4,75 +4,68 @@ Guide pas à pas. À la fin, l'application sera accessible sur une URL publique 
 
 > **Prérequis :** le code est déjà sur GitHub (`samueldolly321/gestion-de-restaurant`, branche `main`) et un compte gratuit sur https://render.com.
 
----
-
-## Option A — Déploiement automatique (Blueprint, recommandé)
-
-Le fichier **`render.yaml`** (à la racine) décrit tout : le serveur web **et** la base PostgreSQL.
-
-1. Va sur https://dashboard.render.com → **New +** → **Blueprint**.
-2. Connecte ton compte GitHub et choisis le dépôt **`gestion-de-restaurant`**.
-3. Render lit `render.yaml` et propose de créer :
-   - un **service web** `restopilote` (Node) ;
-   - une **base PostgreSQL** `restopilote-db`.
-4. Clique **Apply**. Render va :
-   - installer les dépendances, **construire** le front + le serveur (`npm run build`) ;
-   - **créer les tables** dans la base (`npm run db:push`) ;
-   - démarrer le serveur (`npm run start`).
-5. (Optionnel) Pour l'onglet **Analyses IA**, ajoute la clé Gemini : service `restopilote` → **Environment** → `GEMINI_API_KEY` → colle ta clé → **Save** (redéploie).
-
-⏳ Le premier déploiement prend ~3-5 min. Quand le statut est **Live**, ouvre l'URL affichée.
+> **Architecture :** le **serveur web** est hébergé sur **Render** ; la **base PostgreSQL** est hébergée sur **Neon** (https://neon.tech, Postgres gratuit qui n'expire pas). Raison : Render ne permet qu'**une seule base gratuite par compte**. Le serveur se connecte à la base via la variable **`DATABASE_URL`**.
 
 ---
 
-## Option B — Déploiement manuel (sans Blueprint)
+## Étape 1 — Créer la base PostgreSQL (Neon)
 
-1. **Base de données** : **New +** → **PostgreSQL** → plan **Free**, région **Frankfurt** → **Create**. Note la **Internal Database URL**.
-2. **Service web** : **New +** → **Web Service** → dépôt `gestion-de-restaurant` → :
-   - **Runtime** : Node
-   - **Build Command** : `npm install --include=dev && npm run build && npm run db:push`
-   - **Start Command** : `npm run start`
-   - **Health Check Path** : `/api/health`
-3. **Environment** (variables) :
-   | Clé | Valeur |
-   |---|---|
-   | `NODE_ENV` | `production` |
-   | `DATABASE_URL` | *(colle l'Internal Database URL de l'étape 1)* |
-   | `JWT_SECRET` | *(une longue chaîne aléatoire — bouton « Generate »)* |
-   | `ENABLE_TEST_LOGIN` | `false` |
-   | `GEMINI_API_KEY` | *(optionnel)* |
-4. **Create Web Service**.
+1. Va sur **https://neon.tech** → inscris-toi (avec GitHub, c'est le plus simple).
+2. **Create project** → nom `restopilote`, région **Europe (Frankfurt)** de préférence → Create.
+3. Neon affiche une **Connection string** du type :
+   `postgresql://user:password@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`
+4. **Copie cette chaîne** (bouton copier). C'est ta `DATABASE_URL`. Garde-la sous la main.
+
+*(Alternative : Supabase → Project Settings → Database → Connection string « URI ». Même principe.)*
 
 ---
 
-## Première connexion (base vide)
+## Étape 2 — Déployer le service web (Blueprint Render)
 
-La base en ligne est **neuve et vide** (tes données locales ne sont **pas** transférées).
+Le fichier **`render.yaml`** (à la racine) décrit le service web.
+
+1. https://dashboard.render.com → **New +** → **Blueprint**.
+2. Choisis le dépôt **`gestion-de-restaurant`** → **Connect** → laisse la branche `main`.
+3. Render lit `render.yaml` et va créer le service web **`restopilote`**. Il demande la valeur des variables marquées « manuelles » :
+   - **`DATABASE_URL`** → colle la chaîne de connexion Neon de l'étape 1.
+   - **`GEMINI_API_KEY`** → (optionnel, pour l'onglet Analyses IA) colle ta clé, ou laisse vide.
+4. Clique **Apply**.
+
+Render va alors : installer les dépendances → **construire** le front + le serveur → **créer les tables** dans la base Neon (`db:push`) → démarrer le serveur.
+
+⏳ ~3-5 min. Quand le statut est **Live**, ouvre l'URL affichée (`https://restopilote.onrender.com`).
+
+---
+
+## Étape 3 — Première connexion (base vide)
+
+La base est **neuve et vide** (aucune donnée locale transférée).
 
 1. Ouvre l'URL de l'app → écran de connexion.
 2. Onglet **« S'inscrire »** → crée le **premier compte Super Admin** (e-mail + mot de passe, rôle Super Admin).
 3. Connecte-toi, puis via l'onglet **Utilisateurs** ajoute le gérant et le personnel.
 4. Renseigne le **nom, logo, slogan** du restaurant dans **Paramètres**.
 
-> `ENABLE_TEST_LOGIN` est à `false` en production : pas de bouton « Accès test ». On passe donc par l'inscription.
+> `ENABLE_TEST_LOGIN=false` en production : pas de bouton « Accès test ». On passe par l'inscription.
 
 ---
 
 ## ⚠️ À savoir sur le plan gratuit
 
-- **Le serveur s'endort** après ~15 min sans visite → le 1er accès suivant met ~30-50 s à répondre (démarrage à froid). Normal.
-- **La base PostgreSQL gratuite expire au bout d'environ 30 jours** (Render la supprime). Pour un usage réel/durable, passe la base en plan payant (≈ 7 $/mois) — les données sont alors conservées et sauvegardées.
-- Sur plan payant, tu peux aussi ajouter un **domaine personnalisé** (Settings → Custom Domains).
+- **Le serveur Render s'endort** après ~15 min sans visite → le 1er accès suivant met ~30-50 s à répondre (démarrage à froid). Normal.
+- **La base Neon gratuite** se met en veille après inactivité mais **ne s'expire pas** ; elle se réveille en quelques secondes.
+- Pour un usage réel/pro : passer le web Render et/ou la base Neon en plan payant (meilleures perfs, pas de mise en veille).
 
 ## Dépannage
 
 | Problème | Solution |
 |---|---|
 | Build échoue sur `esbuild`/`tailwind` introuvable | Vérifie que la build command contient bien `--include=dev`. |
-| `db:push` bloque/échoue pendant le build | Lance-le à la main : service → **Shell** → `npm run db:push`. |
-| Page blanche / 502 après déploiement | Regarde les **Logs** du service ; vérifie `DATABASE_URL` et `NODE_ENV=production`. |
-| Connexion DB refusée | La `DATABASE_URL` doit être celle de la base Render (SSL est géré automatiquement par le code). |
-| « Session expirée » en boucle | `JWT_SECRET` a changé entre deux déploiements — reconnecte-toi. Garde un `JWT_SECRET` stable. |
+| `db:push` échoue : `DATABASE_URL` manquant | Renseigne `DATABASE_URL` (service → **Environment**) puis **Manual Deploy → Deploy latest commit**. |
+| `db:push` bloque pendant le build | Lance-le à la main : service → **Shell** → `npm run db:push`. |
+| Connexion DB refusée / SSL | Vérifie que la chaîne Neon est complète (avec `?sslmode=require`). Le SSL est géré par le code. |
+| Page blanche / 502 après déploiement | Regarde les **Logs** ; vérifie `DATABASE_URL` et `NODE_ENV=production`. |
+| « Session expirée » en boucle | `JWT_SECRET` a changé entre deux déploiements — reconnecte-toi. Garde-le stable. |
 
 ---
 

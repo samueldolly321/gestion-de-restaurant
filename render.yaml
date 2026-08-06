@@ -1,5 +1,7 @@
 # Blueprint Render pour RestoPilote (https://render.com)
-# Déploie un service web Node + une base PostgreSQL gérée.
+# Déploie UNIQUEMENT le service web Node. La base PostgreSQL est externe
+# (Neon / Supabase) car Render limite à une seule base gratuite par compte.
+# La connexion se fait via la variable DATABASE_URL (à renseigner au déploiement).
 # Utilisation : Render Dashboard → New → Blueprint → sélectionne ce dépôt.
 
 services:
@@ -25,13 +27,4 @@ services:
       - key: GEMINI_API_KEY
         sync: false            # optionnel : à renseigner dans le dashboard (onglet Analyses IA)
       - key: DATABASE_URL
-        fromDatabase:
-          name: restopilote-db
-          property: connectionString
-
-databases:
-  - name: restopilote-db
-    plan: free                 # PostgreSQL gratuit (⚠️ expire au bout de ~30 jours)
-    region: frankfurt
-    databaseName: chefsuite
-    user: chefsuite
+        sync: false            # OBLIGATOIRE : chaîne de connexion de la base externe (Neon/Supabase)
