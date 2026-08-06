@@ -18,3 +18,6 @@ server.cjs
 
 # Fichiers de test/images locales (photos de plats, PDF…) — non versionnés
 image/
+
+# Sortie du build desktop (installateur Electron)
+release/
