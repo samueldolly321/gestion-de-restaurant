@@ -97,7 +97,7 @@ const C = [
 
   ['h1', '8. Conseils et pièges à éviter'],
   ['b', "Toujours lancer npm run lint avant de conclure : il attrape la plupart des erreurs."],
-  ['b', "Ne mets jamais .env ni firebase-applet-config.json sur GitHub (secrets). Ils sont déjà ignorés."],
+  ['b', "Ne mets jamais le fichier .env sur GitHub (il contient les secrets : accès base, JWT_SECRET, clé Gemini). Il est déjà ignoré."],
   ['b', "Après un changement de schema.ts, n'oublie pas npm run db:push, sinon la base ne connaît pas la nouvelle colonne."],
   ['b', "Un hook (useState, usePagination...) s'appelle toujours en haut du composant, jamais dans un if."],
   ['b', "Le serveur ne se recharge pas seul : redémarre-le après avoir touché server.ts / queries.ts / schema.ts."],

@@ -15,7 +15,7 @@ Ce guide t'explique **pas à pas** comment installer et lancer l'application **R
 | **Vite** | Sert le front en développement |
 | **PostgreSQL** | La base de données (toutes les données du resto) |
 | **Drizzle ORM** | Crée les tables et parle à PostgreSQL |
-| **Firebase Auth** | La connexion / les comptes (e-mail + mot de passe) |
+| **bcrypt + JWT** | La connexion / les comptes (e-mail + mot de passe), stockés dans PostgreSQL |
 | **Gemini (Google AI)** | Analyses IA — **optionnel** |
 
 Le front **et** le back tournent ensemble sur **un seul serveur** : `http://localhost:3000`.
@@ -56,7 +56,7 @@ Le front **et** le back tournent ensemble sur **un seul serveur** : `http://loca
    ```
    ⏳ Ça prend 1 à 3 minutes la première fois. C'est normal.
 
-> ℹ️ **Deux fichiers de config ne sont PAS dans le dépôt** (ils contiennent des secrets et sont ignorés par git) : `.env` et `firebase-applet-config.json`. Tu vas les **créer toi-même** aux étapes 3 et 4, à partir des modèles fournis `.env.example` et `firebase-applet-config.example.json`.
+> ℹ️ **Un fichier de config n'est PAS dans le dépôt** (il contient des secrets et est ignoré par git) : `.env`. Tu vas le **créer toi-même** à l'étape 3, à partir du modèle fourni `.env.example`.
 
 ---
 
@@ -119,84 +119,34 @@ SQL_PASSWORD="app_password"
 SQL_ADMIN_USER="app_user"
 SQL_ADMIN_PASSWORD="app_password"
 
-# Bouton "Accès test (Admin)" sans Firebase (pratique en local). Mettre "false" en production.
+# Bouton "Accès test (Admin)" sans mot de passe (pratique en local). Mettre "false" en production.
 ENABLE_TEST_LOGIN="true"
+
+# Secret de signature des sessions (auth PostgreSQL) — OBLIGATOIRE. Une longue chaîne aléatoire, à garder secrète.
+JWT_SECRET="mets-ici-une-longue-chaine-aleatoire"
 
 # Clé API Gemini pour les analyses IA — OPTIONNEL (laisser vide si non utilisé)
 GEMINI_API_KEY=""
 ```
 
+> 💡 Pour générer un bon `JWT_SECRET` : `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` puis colle le résultat.
+
 > ⚠️ Le fichier `.env` contient des secrets : ne le partage pas, ne le mets pas sur GitHub (il est déjà ignoré par `.gitignore`).
 
 ---
 
-## 🔥 Étape 4 — Configurer Firebase (les comptes / la connexion)
+## 🔑 Étape 4 — L'authentification (aucun service externe)
 
-L'application utilise **Firebase Authentication** pour gérer les connexions **e-mail + mot de passe**. Suis ces étapes **dans l'ordre**.
+**Les comptes et mots de passe sont gérés directement par PostgreSQL** — plus de Firebase, **aucun service externe, pas besoin d'Internet** pour se connecter. Les mots de passe sont **hachés (bcrypt)** en base et les sessions sont des **jetons signés** (`JWT_SECRET`, défini à l'étape 3).
 
-### 4.1 — Créer un projet Firebase
-1. Va sur la **Console Firebase** : https://console.firebase.google.com/
-2. Connecte-toi avec un compte **Google**.
-3. Clique **« Ajouter un projet »**.
-4. Donne un nom, par ex. **`chefsuite-local`**.
-5. Google Analytics : tu peux le **désactiver** (pas nécessaire) → **Créer le projet**.
-6. Attends ~30 s puis **Continuer**.
+Il n'y a donc **rien à configurer ici**. Vérifie seulement que ton `.env` contient bien une ligne `JWT_SECRET` avec une longue chaîne aléatoire (étape 3).
 
-### 4.2 — Activer la connexion E-mail/Mot de passe
-Dans la **nouvelle console Firebase**, l'authentification est rangée sous **« Sécurité »** :
-
-1. Dans le menu de gauche, sous **« Catégories de produits »**, clique **« Sécurité »**.
-   - *(Si tu ne la trouves pas : utilise la **barre de recherche** en haut et tape `Authentication`.)*
-2. Clique **« Authentication »**, puis **« Commencer » / « Get started »**.
-3. Onglet **« Méthode de connexion » / « Sign-in method »**.
-4. Clique **« Ajouter un fournisseur »**, puis, sous **« Fournisseurs natifs »**, choisis **« Adresse e-mail/Mot de passe »**.
-5. **Active le premier interrupteur** (« Adresse e-mail/Mot de passe »).
-   - ⚠️ Laisse le **deuxième** interrupteur (« Lien e-mail / connexion sans mot de passe ») **désactivé**.
-6. Clique **« Enregistrer »**.
-
-   Tu dois maintenant voir, dans le tableau des fournisseurs, la ligne **`Adresse e-mail/Mot de passe` → Activé** ✅.
-
-   👉 *(Optionnel : tu peux aussi activer « Google » de la même façon si tu veux la connexion Google.)*
-
-### 4.3 — Récupérer la configuration de l'application Web
-1. En haut à gauche, clique l'**engrenage ⚙️ → « Paramètres du projet »**.
-2. Descends jusqu'à la section **« Vos applications »**.
-3. Clique l'icône **Web `</>`** (« Ajouter une application »).
-4. **Pseudo de l'application** : mets un nom simple (ex. `chefsuite-web`).
-   - ⚠️ **Ne coche PAS** la case **« Configurez aussi Firebase Hosting »** — inutile en local.
-5. Clique **« Enregistrer l'application »**.
-6. À l'étape « Ajouter le SDK Firebase », **ignore les commandes `npm install` / `import`** : tu as seulement besoin des **valeurs de configuration**. Firebase affiche un bloc `firebaseConfig`, du genre :
-   ```js
-   const firebaseConfig = {
-     apiKey: "AIza........",
-     authDomain: "chefsuite-local.firebaseapp.com",
-     projectId: "chefsuite-local",
-     storageBucket: "chefsuite-local.firebasestorage.app",
-     messagingSenderId: "1234567890",
-     appId: "1:1234567890:web:abcdef123456"
-   };
-   ```
-   **Garde cette page ouverte**, tu vas copier ces valeurs.
-
-### 4.4 — Coller la config dans le projet
-1. **Crée le fichier** `firebase-applet-config.json` à la racine, en copiant le modèle :
-   ```powershell
-   Copy-Item firebase-applet-config.example.json firebase-applet-config.json
-   ```
-2. Ouvre-le et remplace les valeurs par les tiennes, **au format JSON** (guillemets doubles, pas de `const`) :
-   ```json
-   {
-     "apiKey": "AIza........",
-     "authDomain": "chefsuite-local.firebaseapp.com",
-     "projectId": "chefsuite-local",
-     "storageBucket": "chefsuite-local.firebasestorage.app",
-     "messagingSenderId": "1234567890",
-     "appId": "1:1234567890:web:abcdef123456"
-   }
-   ```
-3. Enregistre le fichier.
-
-> ℹ️ **Pas besoin de clé privée (service account).** Le serveur utilise seulement le `projectId` pour vérifier les jetons de connexion. En revanche, la vérification a besoin d'**Internet** (Firebase est un service Google en ligne).
+- **Créer un compte** : au premier lancement, onglet **« S'inscrire »** dans l'app (e-mail + mot de passe + rôle).
+- **Définir/réinitialiser un mot de passe** en ligne de commande :
+  ```powershell
+  npx tsx scripts/set-password.ts mon.email@exemple.com monNouveauMotDePasse
+  ```
+- **Lister les comptes** : `npx tsx scripts/list-users.ts`.
 
 ---
 
@@ -231,8 +181,8 @@ Pour **arrêter** le serveur : `Ctrl + C` dans le terminal.
 
 Sur l'écran de connexion, tu as deux options :
 
-- **Accès test (Admin)** : bouton noir en bas. Entre directement dans l'admin **sans Firebase** (utile pour tester tout de suite). Ne fonctionne que si `ENABLE_TEST_LOGIN="true"` dans le `.env`.
-- **Créer un compte réel** : onglet « S'inscrire », choisis le rôle, saisis e-mail + mot de passe. Ça utilise **Firebase** (l'étape 4 doit être faite).
+- **Accès test (Admin)** : bouton noir en bas. Entre directement dans l'admin **sans mot de passe** (utile pour tester tout de suite). Ne fonctionne que si `ENABLE_TEST_LOGIN="true"` dans le `.env`.
+- **Créer un compte réel** : onglet « S'inscrire », choisis le rôle, saisis e-mail + mot de passe. Le compte est enregistré dans **PostgreSQL** (mot de passe haché).
 
 ### Les deux rôles
 - **Super Admin** : accès complet (finances, dépenses, salaires, paramètres, analyses IA).
@@ -276,12 +226,11 @@ npm run start   # démarre le serveur de production
 - La base `chefsuite` existe-t-elle ? L'utilisateur a-t-il les droits ? (Étape 2.)
 - Les valeurs `SQL_ADMIN_USER` / `SQL_ADMIN_PASSWORD` du `.env` sont-elles correctes ?
 
-**Erreur `auth/operation-not-allowed` à l'inscription**
-- Tu n'as pas activé **Email/Password** dans Firebase (Étape 4.2).
+**Erreur `E-mail ou mot de passe incorrect` à la connexion**
+- Mauvais identifiants, ou le compte n'a pas de mot de passe. Réinitialise-le : `npx tsx scripts/set-password.ts <email> <mdp>`.
 
-**Erreur `auth/invalid-api-key` ou jeton invalide**
-- Le fichier `firebase-applet-config.json` ne correspond pas à ton projet Firebase (Étape 4.4). Revérifie chaque valeur.
-- Pense aussi qu'il faut une **connexion Internet** pour Firebase.
+**Erreur `Unauthorized: Invalid token`**
+- La session a expiré ou le `JWT_SECRET` du `.env` a changé → déconnecte-toi puis reconnecte-toi. Vérifie qu'un `JWT_SECRET` est bien défini (Étape 3).
 
 **La page ne s'ouvre pas sur `localhost:3000`**
 - Le serveur écoute en IPv4. En ligne de commande, teste avec `http://127.0.0.1:3000`.
@@ -297,9 +246,10 @@ npm run start   # démarre le serveur de production
 
 | Fichier / dossier | Contenu |
 |---|---|
-| `.env` | Tes secrets (base de données, options) |
-| `firebase-applet-config.json` | Config Firebase (comptes) |
-| `server.ts` | Le serveur (API + temps réel) |
+| `.env` | Tes secrets (base de données, `JWT_SECRET`, clé Gemini) |
+| `server.ts` | Le serveur (API + temps réel + auth) |
+| `src/lib/auth-jwt.ts` | Signature/vérification des jetons de session |
+| `scripts/set-password.ts` | Définir/réinitialiser le mot de passe d'un compte |
 | `src/App.tsx` | L'application React (l'interface) |
 | `src/components/` | Les écrans (Commandes, Menu, Personnel, Dépenses…) |
 | `src/db/schema.ts` | La structure de la base (les tables) |
@@ -307,6 +257,6 @@ npm run start   # démarre le serveur de production
 
 ---
 
-Bonne installation ! 🍽️ En cas de blocage, relis la section **Dépannage** — 90 % des soucis viennent du `.env` ou de Firebase.
+Bonne installation ! 🍽️ En cas de blocage, relis la section **Dépannage** — 90 % des soucis viennent du `.env` ou de PostgreSQL (base pas créée / mauvais mot de passe).
 
 > 📖 **Pour apprendre à utiliser l'application** (tous les écrans, de A à Z), ouvre le guide **`Guide-Utilisation-RestoPilote.md`** fourni à la racine du projet.

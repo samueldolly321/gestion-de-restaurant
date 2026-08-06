@@ -12,7 +12,7 @@ Mis à jour le **15/07/2026**.
 
 Deux façons d'entrer :
 - **Accès test (Admin)** : bouton noir, entre directement sans compte (si activé en local).
-- **Compte réel** : onglet « S'inscrire » (Firebase), choisis ton rôle.
+- **Compte réel** : onglet « S'inscrire » (e-mail + mot de passe, enregistré dans PostgreSQL), choisis ton rôle.
 
 **Les rôles :**
 - **Super Admin** : tout voir (finances, salaires, dépenses, paramètres, IA).

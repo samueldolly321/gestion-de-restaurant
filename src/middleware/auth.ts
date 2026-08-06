@@ -1,12 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
-import { adminAuth } from '../lib/firebase-admin.ts';
-import { DecodedIdToken } from 'firebase-admin/auth';
+import { verifyAppToken, AppTokenPayload } from '../lib/auth-jwt.ts';
 
 export interface AuthRequest extends Request {
-  user?: DecodedIdToken;
+  user?: AppTokenPayload;
 }
 
-// Jeton fixe utilisé par le login de test (bypass Firebase, usage local uniquement).
+// Jeton fixe utilisé par le login de test (bypass auth, usage local uniquement).
 // N'est accepté que lorsque ENABLE_TEST_LOGIN === 'true'.
 export const TEST_LOGIN_TOKEN = 'TEST-LOGIN-TOKEN';
 
@@ -28,16 +27,15 @@ export const requireAuth = async (
       uid: 'test-super-admin',
       email: 'admin@test.local',
       name: 'Admin Test',
-    } as unknown as DecodedIdToken;
+    };
     return next();
   }
 
   try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    req.user = decodedToken;
+    req.user = verifyAppToken(token);
     next();
   } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
+    console.error('Error verifying app token:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { db } from './index.ts';
 import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets } from './schema.ts';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
@@ -88,13 +89,72 @@ export async function updateUserConfig(
   }
 }
 
-// Récupère un utilisateur par son uid (Firebase ou login de test) — sert à vérifier son rôle côté serveur.
+// Récupère un utilisateur par son uid (login de test) — sert à vérifier son rôle côté serveur.
 export async function getUserByUid(uid: string) {
   try {
     const result = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
     return result[0];
   } catch (error) {
     handleDbError("Failed to fetch user by uid", error);
+  }
+}
+
+// Récupère un utilisateur par son e-mail (pour le login mot de passe).
+export async function getUserByEmail(email: string) {
+  try {
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to fetch user by email", error);
+  }
+}
+
+// Crée un utilisateur avec mot de passe (haché). Utilisé par /api/auth/register.
+export async function createUserWithPassword(params: {
+  email: string;
+  passwordHash: string;
+  displayName?: string;
+  role?: string;
+  ownerEmail?: string; // e-mail du super admin à rejoindre (pour un gérant)
+}) {
+  try {
+    const { email, passwordHash, displayName, role, ownerEmail } = params;
+
+    // Résolution du propriétaire : si un e-mail de super admin est fourni, on rattache le compte.
+    let ownerId: number | null = null;
+    if (ownerEmail) {
+      const owners = await db.select().from(users).where(eq(users.email, ownerEmail)).limit(1);
+      if (owners[0]) {
+        ownerId = owners[0].id;
+      }
+    }
+
+    const insertValues: any = {
+      uid: randomUUID(), // identifiant interne unique
+      email,
+      passwordHash,
+      displayName: displayName || null,
+    };
+    if (role) insertValues.role = role;
+    if (ownerId) insertValues.ownerId = ownerId;
+
+    const result = await db.insert(users).values(insertValues).returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create user with password", error);
+  }
+}
+
+// Définit / réinitialise le mot de passe (haché) d'un utilisateur existant, par e-mail.
+export async function setUserPasswordByEmail(email: string, passwordHash: string) {
+  try {
+    const result = await db.update(users)
+      .set({ passwordHash })
+      .where(eq(users.email, email))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to set user password", error);
   }
 }
 

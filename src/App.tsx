@@ -1,16 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  auth
-} from './lib/firebase.ts';
-import {
-  signOut,
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updateProfile,
-  User as FirebaseUser
-} from 'firebase/auth';
 import io, { Socket } from 'socket.io-client';
+
+// Clé de stockage du jeton de session (auth PostgreSQL, plus de Firebase).
+const TOKEN_STORAGE_KEY = 'restopilote_token';
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -68,14 +60,11 @@ type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel'
 
 export default function App() {
   // Authentication states
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   // New credential login/register states
-  const pendingRoleRef = useRef<string | undefined>(undefined);
-  const pendingOwnerEmailRef = useRef<string | undefined>(undefined);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authOwnerEmail, setAuthOwnerEmail] = useState(''); // e-mail du super admin à rejoindre (gérant)
@@ -131,54 +120,18 @@ export default function App() {
     }).format(amount).replace('MGA', 'Ar').trim();
   };
 
-  // 1. Listen to Firebase Auth state
+  // 1. Restaure la session depuis le jeton stocké localement (au chargement de la page).
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (usr) => {
-      if (usr) {
-        setFirebaseUser(usr);
-        try {
-          const jwtToken = await usr.getIdToken();
-          setToken(jwtToken);
-          // Sync with Postgres backend, passing pending role + owner email if present
-          const roleToSync = pendingRoleRef.current;
-          const ownerEmailToSync = pendingOwnerEmailRef.current;
-          pendingRoleRef.current = undefined; // reset
-          pendingOwnerEmailRef.current = undefined;
-          await syncUserWithBackend(jwtToken, roleToSync, ownerEmailToSync);
-        } catch (err: any) {
-          console.error("Auth sync failed", err);
-          setErrorMsg("Impossible de s'authentifier avec les serveurs sécurisés.");
-        }
-      } else {
-        setFirebaseUser(null);
-        setDbUser(null);
-        setToken(null);
-        setClients([]);
-        setPersonnel([]);
-        setMenuItems([]);
-        setOrders([]);
-        setReservations([]);
-        setStocks([]);
-        setSuppliers([]);
-        setSupplierOrders([]);
-        setSupplierProducts([]);
-        setAssets([]);
-        setStockMovements([]);
-        setExpenses([]);
-        setRecurringExpenses([]);
-        setIncomes([]);
-        setSpecialEvents([]);
-        setDeliveries([]);
-        setNotifications([]);
-        setIsAuthLoading(false);
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-          socketRef.current = null;
-        }
-      }
+    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!storedToken) {
+      setIsAuthLoading(false);
+      return;
+    }
+    loadSession(storedToken).catch((err) => {
+      console.error('Session restore failed', err);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      setIsAuthLoading(false);
     });
-
-    return () => unsubscribe();
   }, []);
 
   // Safeguard redirect if user is Gérant on a restricted tab
@@ -194,37 +147,32 @@ export default function App() {
     document.title = name ? `${name} — RestoPilote` : 'RestoPilote — Gestion de restaurant';
   }, [dbUser]);
 
-  // 2. Synchronize user with Cloud SQL backend
-  const syncUserWithBackend = async (jwtToken: string, chosenRole?: string, ownerEmail?: string) => {
-    try {
-      setIsAuthLoading(true);
-      setErrorMsg(null);
-      const res = await fetch('/api/auth/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({ role: chosenRole, ownerEmail })
-      });
+  // Finalise une session : stocke le jeton, l'utilisateur, ouvre le socket et charge les données.
+  const startSession = (jwtToken: string, userData: DbUser) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, jwtToken);
+    setToken(jwtToken);
+    setDbUser(userData);
+    setIsAuthLoading(false);
+    setErrorMsg(null);
 
-      if (!res.ok) {
-        throw new Error('Le serveur a échoué à synchroniser la session.');
-      }
+    // Toutes les données utilisent le propriétaire effectif (partage super admin / gérant).
+    const ownerId = userData.dataOwnerId || userData.id;
+    initializeSocket(ownerId);
+    fetchWorkspaceData(jwtToken, ownerId);
+  };
 
-      const userData: DbUser = await res.json();
-      setDbUser(userData);
-      setIsAuthLoading(false);
-
-      // Toutes les données utilisent le propriétaire effectif (partage super admin / gérant).
-      const ownerId = userData.dataOwnerId || userData.id;
-      initializeSocket(ownerId);
-      fetchWorkspaceData(jwtToken, ownerId);
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'La synchronisation serveur a échoué.');
-      setIsAuthLoading(false);
+  // 2. Récupère l'utilisateur courant à partir d'un jeton (au rechargement de la page).
+  const loadSession = async (jwtToken: string) => {
+    setIsAuthLoading(true);
+    setErrorMsg(null);
+    const res = await fetch('/api/auth/me', {
+      headers: { 'Authorization': `Bearer ${jwtToken}` }
+    });
+    if (!res.ok) {
+      throw new Error('Session expirée.');
     }
+    const userData: DbUser = await res.json();
+    startSession(jwtToken, userData);
   };
 
   // 3. Establish Socket.io connection for real-time events
@@ -510,7 +458,7 @@ export default function App() {
     }
   };
 
-  // Email/Password Signup
+  // Inscription e-mail / mot de passe (PostgreSQL)
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authEmail || !authPassword) {
@@ -520,31 +468,32 @@ export default function App() {
     try {
       setErrorMsg(null);
       setIsAuthLoading(true);
-      pendingRoleRef.current = selectedRole;
       // Un gérant rejoint le restaurant du super admin via son e-mail.
-      pendingOwnerEmailRef.current = selectedRole === 'gerant' ? (authOwnerEmail.trim() || undefined) : undefined;
-      const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-      if (authDisplayName && userCredential.user) {
-        await updateProfile(userCredential.user, { displayName: authDisplayName });
+      const ownerEmail = selectedRole === 'gerant' ? (authOwnerEmail.trim() || undefined) : undefined;
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authEmail.trim(),
+          password: authPassword,
+          displayName: authDisplayName.trim() || undefined,
+          role: selectedRole,
+          ownerEmail,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "L'inscription a échoué.");
       }
+      startSession(data.token, data.user);
     } catch (err: any) {
-      console.error('Email registration failed:', err);
+      console.error('Registration failed:', err);
       setIsAuthLoading(false);
-      let friendlyMsg = "L'inscription a échoué.";
-      if (err.code === 'auth/email-already-in-use') {
-        friendlyMsg = 'Cette adresse e-mail est déjà utilisée.';
-      } else if (err.code === 'auth/weak-password') {
-        friendlyMsg = 'Le mot de passe doit contenir au moins 6 caractères.';
-      } else if (err.code === 'auth/invalid-email') {
-        friendlyMsg = "L'adresse e-mail n'est pas valide.";
-      } else {
-        friendlyMsg = err.message || friendlyMsg;
-      }
-      setErrorMsg(friendlyMsg);
+      setErrorMsg(err.message || "L'inscription a échoué.");
     }
   };
 
-  // Email/Password Signin
+  // Connexion e-mail / mot de passe (PostgreSQL)
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authEmail || !authPassword) {
@@ -554,23 +503,24 @@ export default function App() {
     try {
       setErrorMsg(null);
       setIsAuthLoading(true);
-      await signInWithEmailAndPassword(auth, authEmail, authPassword);
-    } catch (err: any) {
-      console.error('Email login failed:', err);
-      setIsAuthLoading(false);
-      let friendlyMsg = 'La connexion a échoué.';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        friendlyMsg = 'E-mail ou mot de passe incorrect.';
-      } else if (err.code === 'auth/invalid-email') {
-        friendlyMsg = "L'adresse e-mail n'est pas valide.";
-      } else {
-        friendlyMsg = err.message || friendlyMsg;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail.trim(), password: authPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'La connexion a échoué.');
       }
-      setErrorMsg(friendlyMsg);
+      startSession(data.token, data.user);
+    } catch (err: any) {
+      console.error('Login failed:', err);
+      setIsAuthLoading(false);
+      setErrorMsg(err.message || 'La connexion a échoué.');
     }
   };
 
-  // Test/Demo login: accès admin local sans Firebase (gated par ENABLE_TEST_LOGIN côté serveur)
+  // Test/Demo login: accès admin local sans mot de passe (gated par ENABLE_TEST_LOGIN côté serveur)
   const handleTestLogin = async () => {
     try {
       setErrorMsg(null);
@@ -584,11 +534,7 @@ export default function App() {
         throw new Error(data.error || "Le login de test est indisponible.");
       }
       const { token: testToken, user } = await res.json();
-      setToken(testToken);
-      setDbUser(user);
-      setIsAuthLoading(false);
-      initializeSocket(user.id);
-      fetchWorkspaceData(testToken, user.id);
+      startSession(testToken, user);
     } catch (err: any) {
       console.error('Test login failed:', err);
       setErrorMsg(err.message || 'Le login de test a échoué.');
@@ -596,15 +542,9 @@ export default function App() {
     }
   };
 
-  // Sign Out
+  // Déconnexion : on efface la session locale (plus de Firebase).
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error('Sign Out Failed:', err);
-    }
-    // Nettoyage manuel de la session (nécessaire pour le login de test qui n'a pas d'utilisateur Firebase)
-    setFirebaseUser(null);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
     setDbUser(null);
     setToken(null);
     setIsAuthLoading(false);
@@ -1442,7 +1382,7 @@ export default function App() {
   };
 
   // ONBOARDING SCREEN (Signed Out) - Crafted in spectacular Red and Yellow brand accents!
-  if (!firebaseUser && !dbUser) {
+  if (!dbUser) {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between relative overflow-hidden font-sans">
         {/* Soft Background Warm Elements */}
@@ -1583,7 +1523,7 @@ export default function App() {
                 <div className="space-y-1.5">
                   <h3 className="font-bold text-slate-800">3. Sécurité Locale Totale</h3>
                   <p>
-                    Lorsque l'application RestoPilote est déployée en local sur votre poste de travail à l'aide de PostgreSQL, vous gardez le contrôle physique et réseau absolu sur votre base de données. Aucune donnée n'est envoyée vers des serveurs distants en dehors de l'authentification sécurisée gérée via Firebase Auth.
+                    Lorsque l'application RestoPilote est déployée en local sur votre poste de travail à l'aide de PostgreSQL, vous gardez le contrôle physique et réseau absolu sur votre base de données. Aucune donnée n'est envoyée vers des serveurs distants : l'authentification est gérée localement par votre base PostgreSQL (mots de passe hachés, sessions signées).
                   </p>
                 </div>
 

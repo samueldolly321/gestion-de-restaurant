@@ -4,8 +4,9 @@ import { integer, pgTable, serial, text, timestamp, boolean, doublePrecision, js
 // Define the 'users' table (Main restaurant manager / owner)
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
-  uid: text('uid').notNull().unique(), // Firebase Auth UID
+  uid: text('uid').notNull().unique(), // Identifiant interne unique (généré à la création)
   email: text('email').notNull(),
+  passwordHash: text('password_hash'), // Hash bcrypt du mot de passe (null pour l'accès test / comptes sans mot de passe)
   displayName: text('display_name'),
   photoUrl: text('photo_url'),
   createdAt: timestamp('created_at').defaultNow(),

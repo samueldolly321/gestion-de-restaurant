@@ -2,7 +2,7 @@
 
 Guide **pas à pas**, écrit pour un **développeur junior** : chaque étape a la commande exacte à taper. À la fin, l'application tournera sur **http://localhost:3000**.
 
-> 📌 **Ce guide est pour le cas « dossier copié sur clé USB »** (copier-coller, pas de `git clone`). Comme tu as copié le dossier, tes fichiers de config (`.env`, Firebase) sont **déjà dedans** — c'est plus rapide que depuis GitHub.
+> 📌 **Ce guide est pour le cas « dossier copié sur clé USB »** (copier-coller, pas de `git clone`). Comme tu as copié le dossier, ton fichier de config (`.env`) est **déjà dedans** — c'est plus rapide que depuis GitHub.
 >
 > Il utilise **exactement les valeurs de config qu'on utilise déjà** (base `chefsuite`, utilisateur `user` / mot de passe `user`).
 
@@ -13,8 +13,7 @@ Guide **pas à pas**, écrit pour un **développeur junior** : chaque étape a l
 | Outil | À quoi ça sert | Obligatoire ? |
 |---|---|---|
 | **Node.js 20** | Faire tourner l'app (front + back) | ✅ Oui |
-| **PostgreSQL 16** | La base de données (toutes les données du resto) | ✅ Oui |
-| **Un compte Firebase** | Les connexions (e-mail + mot de passe) | ✅ Oui (sauf si tu utilises seulement le bouton « Accès test ») |
+| **PostgreSQL 16** | La base de données (toutes les données du resto **et** les comptes/mots de passe) | ✅ Oui |
 | **Git** | Récupérer les futures mises à jour / pousser tes modifs | ❌ Optionnel (le code est déjà sur la clé) |
 | **Une clé Gemini** | L'onglet « Analyses IA » | ❌ Optionnel (déjà dans le `.env` copié) |
 
@@ -73,9 +72,9 @@ Tu as le dossier du projet sur une **clé USB** (copier-coller). Fais ceci :
    ```
    ⏳ 1 à 3 minutes. C'est normal.
 
-> ✅ **Bonne nouvelle : tes fichiers secrets sont déjà là.** Comme tu as **copié le dossier** (et non cloné depuis GitHub), les fichiers `.env` et `firebase-applet-config.json` — qui contiennent la config base de données, Firebase et la **clé Gemini** — ont été **copiés avec le dossier**. Tu n'as donc **pas à les recréer** : il suffit de **vérifier** leurs valeurs (étapes 4 et 5).
+> ✅ **Bonne nouvelle : ton fichier secret est déjà là.** Comme tu as **copié le dossier** (et non cloné depuis GitHub), le fichier `.env` — qui contient la config base de données, le secret des sessions (`JWT_SECRET`) et la **clé Gemini** — a été **copié avec le dossier**. Tu n'as donc **pas à le recréer** : il suffit de **vérifier** ses valeurs (étape 4).
 >
-> ⚠️ Si tu ne les vois **pas** dans le dossier : soit ils étaient masqués et non copiés (active « Afficher les fichiers cachés » dans l'Explorateur), soit il faut les recréer à partir des modèles `.env.example` / `firebase-applet-config.example.json` (voir étapes 4 et 5 en variante).
+> ⚠️ Si tu ne le vois **pas** dans le dossier : soit il était masqué et non copié (active « Afficher les fichiers cachés » dans l'Explorateur), soit il faut le recréer à partir du modèle `.env.example` (voir étape 4 en variante).
 >
 > ⚠️ La **base de données PostgreSQL n'est PAS dans le dossier** (elle vit ailleurs sur l'ordinateur). Tu dois quand même faire l'**étape 3** (installer Postgres + créer la base) sur cette machine.
 
@@ -136,14 +135,18 @@ SQL_PASSWORD="user"
 SQL_ADMIN_USER="user"
 SQL_ADMIN_PASSWORD="user"
 
-# Bouton "Accès test (Admin)" sans Firebase (pratique en local)
+# Bouton "Accès test (Admin)" sans mot de passe (pratique en local)
 ENABLE_TEST_LOGIN="true"
+
+# Secret de signature des sessions (auth PostgreSQL) — une longue chaîne aléatoire, à garder secrète
+JWT_SECRET="mets-ici-une-longue-chaine-aleatoire"
 
 # Clé API Gemini pour les analyses IA (déjà présente si tu as copié le dossier)
 GEMINI_API_KEY="..."
 ```
 
 - ✅ Si les 4 lignes `SQL_*` correspondent bien à la base de l'étape 3 (`chefsuite`, `user`/`user`) → rien à changer.
+- 🔐 Le **`JWT_SECRET`** est déjà là (dans le `.env` copié). S'il manque, mets n'importe quelle longue chaîne aléatoire (ex. généré avec `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`).
 - 🔑 La **clé Gemini** est déjà là (elle était dans le `.env` copié) → l'IA marchera directement.
 - ⚠️ **Si le fichier `.env` est absent** (pas copié) : crée-le avec `Copy-Item .env.example .env`, puis colle le contenu ci-dessus (et remets ta clé Gemini si tu veux l'IA).
 
@@ -151,40 +154,19 @@ GEMINI_API_KEY="..."
 
 ---
 
-## 5. Vérifier la config Firebase (déjà copiée)
+## 5. Authentification — rien à installer 🎉
 
-Le fichier **`firebase-applet-config.json`** a été copié avec le dossier → **normalement, rien à faire**. Vérifie juste qu'il est bien présent à la racine :
-```powershell
-Get-Content firebase-applet-config.json
-```
-S'il affiche un bloc JSON avec `apiKey`, `projectId`, etc. → ✅ c'est bon, passe à l'étape 6.
+**Les comptes et mots de passe sont gérés directement par PostgreSQL** (plus de Firebase, plus de service externe, **pas besoin d'Internet** pour se connecter). Les mots de passe sont **hachés (bcrypt)** en base et les sessions sont des **jetons signés** avec ton `JWT_SECRET` (étape 4).
 
-> ℹ️ Le même projet Firebase est utilisé (c'est un service **en ligne** de Google) : ta config copiée continue de marcher depuis n'importe quel ordinateur. Il faut juste **Internet**.
+Tu n'as donc **rien à faire ici** : tant que ton `.env` a un `JWT_SECRET`, la connexion et l'inscription marchent.
+
+> 💡 Pour juste tester sans créer de compte, utilise le bouton **« Accès test (Admin) »** à l'étape 7 (grâce à `ENABLE_TEST_LOGIN="true"`).
 >
-> 💡 Pour juste tester sans créer de comptes, tu peux même ignorer Firebase et utiliser le bouton **« Accès test (Admin) »** à l'étape 7 (grâce à `ENABLE_TEST_LOGIN="true"`).
-
-### ⚠️ Variante — si le fichier `firebase-applet-config.json` est **absent**
-Il n'a pas été copié : recrée-le.
-1. Va sur https://console.firebase.google.com/ → ton projet **`chefsuite-local`** (ou crée-en un).
-2. **Authentication** → active **Adresse e-mail/Mot de passe** (1er interrupteur) → Enregistrer.
-3. Engrenage ⚙️ → **Paramètres du projet** → section **Vos applications** → app **Web `</>`** → copie le bloc `firebaseConfig`.
-4. Crée le fichier et colle tes valeurs (format JSON, guillemets doubles) :
-   ```powershell
-   Copy-Item firebase-applet-config.example.json firebase-applet-config.json
-   notepad firebase-applet-config.json
-   ```
-   ```json
-   {
-     "apiKey": "AIza........",
-     "authDomain": "chefsuite-local.firebaseapp.com",
-     "projectId": "chefsuite-local",
-     "storageBucket": "chefsuite-local.firebasestorage.app",
-     "messagingSenderId": "1234567890",
-     "appId": "1:1234567890:web:abcdef123456"
-   }
-   ```
-
-> Pas besoin de clé privée. Le serveur vérifie les jetons via le `projectId` → **Internet requis**.
+> 🔑 Pour définir/réinitialiser le mot de passe d'un compte existant :
+> ```powershell
+> npx tsx scripts/set-password.ts mon.email@exemple.com monNouveauMotDePasse
+> ```
+> Et pour lister les comptes : `npx tsx scripts/list-users.ts`.
 
 ---
 
@@ -213,8 +195,8 @@ Attends le message **`Server running at http://0.0.0.0:3000`**, puis ouvre :
 - Si `localhost` ne répond pas, essaie **http://127.0.0.1:3000** (souci IPv6).
 
 ### Se connecter
-- **Accès test (Admin)** (bouton noir) : entre direct sans Firebase (marche car `ENABLE_TEST_LOGIN="true"`).
-- **Créer un compte réel** : onglet « S'inscrire » (nécessite l'étape 5 faite).
+- **Accès test (Admin)** (bouton noir) : entre direct sans mot de passe (marche car `ENABLE_TEST_LOGIN="true"`).
+- **Créer un compte réel** : onglet « S'inscrire » (e-mail + mot de passe, enregistré dans PostgreSQL).
 
 **Partager les données super admin ↔ gérant** : le super admin crée son compte d'abord ; le gérant s'inscrit en rôle « Gérant » et met **l'e-mail du super admin** dans le champ prévu → les deux voient le même restaurant.
 
@@ -246,8 +228,8 @@ npm run lint          # vérifie le TypeScript, doit finir sans erreur
 | `Database credentials missing` / connexion refusée | Service PostgreSQL arrêté (Windows → `Services` → `postgresql-x64-16` doit tourner) **ou** mauvaises valeurs `SQL_*` dans `.env`. |
 | `npm run db:push` échoue | La base `chefsuite` n'existe pas / droits manquants (étape 3) ; vérifie `SQL_ADMIN_USER` / `SQL_ADMIN_PASSWORD`. |
 | `password authentication failed for user "user"` | Le mot de passe du rôle `user` n'est pas `user`. Recrée-le : `ALTER ROLE "user" WITH PASSWORD 'user';` dans `psql -U postgres`. |
-| `auth/operation-not-allowed` à l'inscription | E-mail/Mot de passe pas activé dans Firebase (étape 5.2). |
-| `auth/invalid-api-key` ou jeton invalide | `firebase-applet-config.json` ne correspond pas au projet (étape 5.4) ; vérifie aussi ta connexion Internet. |
+| `E-mail ou mot de passe incorrect` à la connexion | Mauvais identifiants, ou le compte n'a pas de mot de passe. Réinitialise-le : `npx tsx scripts/set-password.ts <email> <mdp>`. |
+| `Unauthorized: Invalid token` | La session a expiré ou le `JWT_SECRET` a changé → déconnecte-toi et reconnecte-toi. |
 | La page ne s'ouvre pas | Essaie `http://127.0.0.1:3000` ; vérifie qu'aucun autre programme n'utilise le port 3000. |
 | Le bouton « Accès test » ne fait rien | `ENABLE_TEST_LOGIN="true"` dans `.env` puis redémarrer ; autorise les pop-ups (aussi pour imprimer une addition). |
 
@@ -273,9 +255,10 @@ git status           # voir ce qui a changé
 
 | Fichier / dossier | Contenu |
 |---|---|
-| `.env` | Tes secrets (base de données, options) — **à créer** |
-| `firebase-applet-config.json` | Config Firebase (comptes) — **à créer** |
-| `server.ts` | Le serveur (API REST + Socket.io temps réel) |
+| `.env` | Tes secrets (base de données, `JWT_SECRET`, clé Gemini) — **à créer** |
+| `server.ts` | Le serveur (API REST + Socket.io temps réel + auth) |
+| `src/lib/auth-jwt.ts` | Signature/vérification des jetons de session |
+| `scripts/set-password.ts` | Définir/réinitialiser le mot de passe d'un compte |
 | `src/App.tsx` | L'application React (état, onglets, dashboard) |
 | `src/components/` | Les écrans (Commandes, Menu, Stocks, Personnel, Biens & Matériel, Livraisons…) |
 | `src/db/schema.ts` | La structure de la base (les tables) |
@@ -284,6 +267,6 @@ git status           # voir ce qui a changé
 
 ---
 
-Bonne installation ! 🍽️ 90 % des soucis viennent du `.env` ou de Firebase — en cas de blocage, relis la section **Dépannage**.
+Bonne installation ! 🍽️ 90 % des soucis viennent du `.env` ou de PostgreSQL (base pas créée / mauvais mot de passe) — en cas de blocage, relis la section **Dépannage**.
 
 > 📖 Pour **apprendre à utiliser** l'application (tous les écrans), ouvre **`Guide-Utilisation-RestoPilote.md`** à la racine.

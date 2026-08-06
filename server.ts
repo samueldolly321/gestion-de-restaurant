@@ -6,10 +6,14 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
+import bcrypt from 'bcryptjs';
 import { requireAuth, AuthRequest, TEST_LOGIN_TOKEN } from './src/middleware/auth.ts';
+import { signAppToken } from './src/lib/auth-jwt.ts';
 import {
   getOrCreateUser,
   getUserByUid,
+  getUserByEmail,
+  createUserWithPassword,
   getUserById,
   updateUserConfig,
   getClients,
@@ -154,25 +158,89 @@ async function startServer() {
     }
   });
 
-  // API Route: Sync Auth User (Register or fetch PostgreSQL user)
-  app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
+  // API Route: Register (création de compte avec e-mail + mot de passe, stocké dans PostgreSQL)
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const { email, password, displayName, role, ownerEmail } = req.body || {};
+      if (!email || !password) {
+        return res.status(400).json({ error: 'E-mail et mot de passe requis.' });
+      }
+      if (String(password).length < 6) {
+        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const existing = await getUserByEmail(normalizedEmail);
+      if (existing) {
+        return res.status(409).json({ error: 'Cette adresse e-mail est déjà utilisée.' });
+      }
+
+      const passwordHash = await bcrypt.hash(String(password), 10);
+      const dbUser = await createUserWithPassword({
+        email: normalizedEmail,
+        passwordHash,
+        displayName: displayName || normalizedEmail.split('@')[0],
+        role,
+        ownerEmail: ownerEmail ? String(ownerEmail).trim().toLowerCase() : undefined,
+      });
+
+      const token = signAppToken({ uid: dbUser.uid, email: dbUser.email, name: dbUser.displayName || undefined });
+      res.json({ token, user: await buildSessionUser(dbUser) });
+    } catch (error: any) {
+      console.error('Error during register:', error);
+      res.status(500).json({ error: error.message || "L'inscription a échoué." });
+    }
+  });
+
+  // API Route: Login (e-mail + mot de passe vérifiés contre PostgreSQL)
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body || {};
+      if (!email || !password) {
+        return res.status(400).json({ error: 'E-mail et mot de passe requis.' });
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const dbUser = await getUserByEmail(normalizedEmail);
+      if (!dbUser || !dbUser.passwordHash) {
+        return res.status(401).json({ error: 'E-mail ou mot de passe incorrect.' });
+      }
+
+      const ok = await bcrypt.compare(String(password), dbUser.passwordHash);
+      if (!ok) {
+        return res.status(401).json({ error: 'E-mail ou mot de passe incorrect.' });
+      }
+
+      const token = signAppToken({ uid: dbUser.uid, email: dbUser.email, name: dbUser.displayName || undefined });
+      res.json({ token, user: await buildSessionUser(dbUser) });
+    } catch (error: any) {
+      console.error('Error during login:', error);
+      res.status(500).json({ error: error.message || 'La connexion a échoué.' });
+    }
+  });
+
+  // API Route: Me (récupère la session courante à partir du jeton — utilisé au rechargement de la page)
+  app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userPayload = req.user;
       if (!userPayload) {
         return res.status(401).json({ error: 'User token verification failed' });
       }
 
-      const { role, ownerEmail } = req.body;
-      const email = userPayload.email || '';
-      const uid = userPayload.uid;
-      const displayName = userPayload.name || email.split('@')[0];
-      const photoUrl = userPayload.picture || '';
+      // Login de test : on (re)crée/retrouve l'utilisateur de test.
+      if (userPayload.uid === 'test-super-admin') {
+        const testUser = await getOrCreateUser('test-super-admin', 'admin@test.local', 'Admin Test', '', 'super_admin');
+        return res.json(await buildSessionUser(testUser));
+      }
 
-      const dbUser = await getOrCreateUser(uid, email, displayName, photoUrl, role, ownerEmail);
+      const dbUser = await getUserByUid(userPayload.uid);
+      if (!dbUser) {
+        return res.status(404).json({ error: 'Utilisateur introuvable.' });
+      }
       res.json(await buildSessionUser(dbUser));
     } catch (error: any) {
-      console.error('Error syncing auth user:', error);
-      res.status(500).json({ error: error.message || 'Failed to sync user' });
+      console.error('Error fetching current user:', error);
+      res.status(500).json({ error: error.message || 'Échec de la récupération de la session.' });
     }
   });
 
