@@ -268,7 +268,7 @@ export default function MenuManager({
               }`}
             >
               {/* Dish Image */}
-              <div className="h-40 w-full bg-slate-100 relative overflow-hidden group">
+              <div className="h-60 w-full bg-slate-100 relative overflow-hidden group">
                 {item.imageUrl ? (
                   <img
                     src={item.imageUrl}
