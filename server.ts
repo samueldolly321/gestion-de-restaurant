@@ -3,7 +3,6 @@ import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
 import bcrypt from 'bcryptjs';
@@ -96,7 +95,8 @@ import {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Render (et la plupart des hébergeurs) fournit le port via la variable d'environnement PORT.
+  const PORT = Number(process.env.PORT) || 3000;
   const httpServer = createHttpServer(app);
   
   // Set up Socket.io server
@@ -2120,6 +2120,8 @@ S'il demande un système de méritocratie, calcule ou propose un indice de perfo
 
   // Setup Vite development server or production static serving
   if (process.env.NODE_ENV !== 'production') {
+    // Import dynamique : 'vite' est une devDependency, absente en production.
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'

@@ -4,7 +4,20 @@ const { Pool } = pkg;
 import * as schema from './schema.ts';
 
 // Function to create a new connection pool.
+// En production (Render, etc.), on utilise DATABASE_URL (chaîne de connexion) avec SSL.
+// En local, on retombe sur les variables SQL_* du .env.
 export const createPool = () => {
+  const connectionString = process.env.DATABASE_URL;
+
+  if (connectionString) {
+    return new Pool({
+      connectionString,
+      // Render/Postgres géré : SSL requis. rejectUnauthorized:false accepte le certificat du fournisseur.
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 15000,
+    });
+  }
+
   const host = process.env.SQL_HOST;
   const user = process.env.SQL_USER;
   const password = process.env.SQL_PASSWORD;
