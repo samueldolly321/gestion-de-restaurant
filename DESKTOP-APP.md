@@ -55,6 +55,7 @@ npm run desktop        # construit puis ouvre directement la fenêtre de l'appli
 |---|---|
 | Fenêtre « démarrage impossible » | PostgreSQL n'est pas démarré, ou la base `chefsuite` n'existe pas / n'a pas ses tables. Vérifie le service PostgreSQL + `npm run db:push`. |
 | Le build `desktop:build` échoue au téléchargement d'Electron | Il faut Internet **au moment du build** (une seule fois). Réessaie. |
+| Erreur **`EPERM: operation not permitted, rename 'release\win-unpacked.tmp'`** | **Verrou de fichier Windows** (souvent l'antivirus **Windows Defender** qui scanne le dossier pendant l'empaquetage). Solutions : 1) ajoute une **exclusion Defender** sur le dossier du projet (Sécurité Windows → Protection contre les virus → Gérer les paramètres → Exclusions → Ajouter le dossier `gestion-de-restaurant`) ; 2) **ferme** toute fenêtre de l'Explorateur ouverte sur `release/` ; 3) lance le terminal **en administrateur** ; 4) supprime le dossier `release/` puis relance `npm run desktop:build`. |
 | L'appli s'ouvre mais page blanche | Le serveur n'a pas fini de démarrer ; attends quelques secondes. Sinon vérifie la connexion à PostgreSQL. |
 | Port déjà utilisé | L'appli utilise le port `34517` ; définis `DESKTOP_PORT` dans le `.env` à côté de l'exe pour le changer. |
 
