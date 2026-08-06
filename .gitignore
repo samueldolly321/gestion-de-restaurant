@@ -15,3 +15,6 @@ chefsuite
 # Sortie de compilation serveur
 server.js
 server.cjs
+
+# Fichiers de test/images locales (photos de plats, PDF…) — non versionnés
+image/
