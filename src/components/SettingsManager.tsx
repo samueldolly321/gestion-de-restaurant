@@ -1,20 +1,25 @@
 import React, { useState } from 'react';
-import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin } from 'lucide-react';
+import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2 } from 'lucide-react';
 import { DbUser } from '../types.ts';
 
 interface SettingsManagerProps {
   dbUser: DbUser;
   onUpdateConfig: (updates: {
     restaurantName: string;
+    restaurantSlogan: string | null;
     restaurantLogoUrl: string | null;
     restaurantPhone: string | null;
     restaurantAddress: string | null;
     role: string;
   }) => Promise<void>;
+  onResetFinancial?: () => Promise<any>;
 }
 
-export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsManagerProps) {
+const RESET_KEYWORD = 'REINITIALISER';
+
+export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinancial }: SettingsManagerProps) {
   const [restaurantName, setRestaurantName] = useState(dbUser.restaurantName || 'RestoPilote');
+  const [restaurantSlogan, setRestaurantSlogan] = useState(dbUser.restaurantSlogan || '');
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState(dbUser.restaurantLogoUrl || '');
   const [restaurantPhone, setRestaurantPhone] = useState(dbUser.restaurantPhone || '');
   const [restaurantAddress, setRestaurantAddress] = useState(dbUser.restaurantAddress || '');
@@ -22,8 +27,31 @@ export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsMana
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  // Zone de danger : réinitialisation des données financières.
+  const [resetText, setResetText] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [resetIsError, setResetIsError] = useState(false);
+
   // Seul le super admin peut modifier les paramètres. Le gérant est en lecture seule.
   const canEdit = dbUser.role === 'super_admin';
+
+  const doReset = async () => {
+    if (!onResetFinancial || resetText !== RESET_KEYWORD) return;
+    setResetting(true);
+    setResetMsg(null);
+    setResetIsError(false);
+    try {
+      const r = await onResetFinancial();
+      setResetMsg(`Réinitialisé : ${r?.orders || 0} additions, ${r?.expenses || 0} dépenses, ${r?.incomes || 0} rentrées et ${r?.recurringExpenses || 0} dépenses récurrentes supprimées.`);
+      setResetText('');
+    } catch (err: any) {
+      setResetIsError(true);
+      setResetMsg('Erreur : ' + (err?.message || 'la réinitialisation a échoué.'));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +61,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsMana
     try {
       await onUpdateConfig({
         restaurantName,
+        restaurantSlogan: restaurantSlogan || null,
         restaurantLogoUrl: restaurantLogoUrl || null,
         restaurantPhone: restaurantPhone || null,
         restaurantAddress: restaurantAddress || null,
@@ -100,6 +129,22 @@ export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsMana
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Ex. Le Gourmet d'Antananarivo"
               />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Slogan du Restaurant
+              </label>
+              <input
+                type="text"
+                value={restaurantSlogan}
+                onChange={(e) => setRestaurantSlogan(e.target.value)}
+                disabled={!canEdit}
+                maxLength={60}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                placeholder="Ex. La cuisine malgache authentique"
+              />
+              <p className="text-[9px] text-slate-400 mt-1">Affiché sous le nom du restaurant dans la barre latérale.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -231,6 +276,49 @@ export default function SettingsManager({ dbUser, onUpdateConfig }: SettingsMana
           </div>
         )}
       </form>
+
+      {/* Zone de danger — réinitialisation des données financières (super admin uniquement) */}
+      {canEdit && onResetFinancial && (
+        <div className="mx-6 mb-6 p-5 border border-rose-200 bg-rose-50/40 rounded-2xl">
+          <h4 className="text-xs font-bold text-rose-700 uppercase tracking-widest flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5" /> Zone de danger
+          </h4>
+          <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+            <strong>Tout remettre à zéro (données financières).</strong> Supprime définitivement toutes les
+            <strong> additions/commandes</strong>, <strong>dépenses</strong> (y compris récurrentes) et
+            <strong> rentrées d'argent</strong> de ce restaurant. Les clients, le personnel, la carte et les stocks
+            sont <strong>conservés</strong>. Cette action est <strong>irréversible</strong>.
+          </p>
+
+          {resetMsg && (
+            <div className={`mt-3 p-2.5 rounded-xl text-[11px] font-semibold ${resetIsError ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+              {resetMsg}
+            </div>
+          )}
+
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-4 mb-1">
+            Pour confirmer, tapez <span className="font-mono text-rose-700">{RESET_KEYWORD}</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={resetText}
+              onChange={(e) => setResetText(e.target.value.toUpperCase())}
+              placeholder={RESET_KEYWORD}
+              className="flex-1 px-3.5 py-2 bg-white border border-rose-200 rounded-xl text-xs focus:ring-1 focus:ring-rose-500 outline-none text-slate-800 font-mono"
+            />
+            <button
+              type="button"
+              onClick={doReset}
+              disabled={resetText !== RESET_KEYWORD || resetting}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              {resetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Tout remettre à zéro
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

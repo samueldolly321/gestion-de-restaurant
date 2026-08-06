@@ -160,10 +160,12 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
 
   // --- Meilleures ventes : plats & boissons les plus commandés (toutes commandes) ---
   const isDrinkCat = (c: string) => ['boisson', 'boisson_chaude', 'boisson_fraiche', 'boisson_alcoolisee', 'cocktail'].includes(c);
-  const itemStats = new Map<number, { name: string; category: string; qty: number; revenue: number }>();
+  // Image du plat (depuis la carte) pour l'afficher dans le classement.
+  const menuImageById = new Map<number, string | null | undefined>(menuItems.map((m) => [m.id, m.imageUrl]));
+  const itemStats = new Map<number, { id: number; name: string; category: string; qty: number; revenue: number }>();
   orders.forEach((o) => (o.items || []).forEach((it) => {
     const key = it.menuItemId;
-    const cur = itemStats.get(key) || { name: it.name || 'Article', category: it.category || '', qty: 0, revenue: 0 };
+    const cur = itemStats.get(key) || { id: key, name: it.name || 'Article', category: it.category || '', qty: 0, revenue: 0 };
     cur.qty += it.quantity;
     cur.revenue += (it.unitPrice || 0) * it.quantity;
     itemStats.set(key, cur);
@@ -173,6 +175,30 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
   const topDrinks = allSold.filter((x) => isDrinkCat(x.category)).sort((a, b) => b.qty - a.qty).slice(0, 5);
   const maxDishQty = Math.max(1, ...topDishes.map((x) => x.qty));
   const maxDrinkQty = Math.max(1, ...topDrinks.map((x) => x.qty));
+
+  // --- Bilan des plats vendus : aujourd'hui / cette semaine (7 derniers jours) / ce mois ---
+  const weekAgoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().slice(0, 10); })();
+  const soldInRange = (predicate: (dateStr: string) => boolean) => {
+    let dishesQty = 0, drinksQty = 0, revenue = 0;
+    orders.forEach((o) => {
+      const dateStr = new Date(o.createdAt).toISOString().slice(0, 10);
+      if (!predicate(dateStr)) return;
+      (o.items || []).forEach((it) => {
+        if (isDrinkCat(it.category || '')) drinksQty += it.quantity;
+        else dishesQty += it.quantity;
+        revenue += (it.unitPrice || 0) * it.quantity;
+      });
+    });
+    return { dishesQty, drinksQty, revenue };
+  };
+  const salesToday = soldInRange((d) => d === todayStr);
+  const salesWeek = soldInRange((d) => d >= weekAgoStr && d <= todayStr);
+  const salesMonth = soldInRange((d) => d.slice(0, 7) === currentMonthStr);
+  const dishBalance = [
+    { key: 'jour', label: "Aujourd'hui", data: salesToday, accent: 'text-red-600', chip: 'bg-red-50' },
+    { key: 'semaine', label: 'Cette semaine', data: salesWeek, accent: 'text-amber-600', chip: 'bg-amber-50' },
+    { key: 'mois', label: 'Ce mois-ci', data: salesMonth, accent: 'text-emerald-600', chip: 'bg-emerald-50' },
+  ];
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -528,6 +554,26 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
         </div>
       </div>
 
+      {/* Bilan des plats vendus : jour / semaine / mois */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-3xs text-left">
+        <h3 className="font-display font-semibold text-slate-800 text-sm mb-4 flex items-center gap-1.5">
+          <ClipboardList className="w-4 h-4 text-red-600" /> Bilan des plats vendus
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {dishBalance.map((b) => (
+            <div key={b.key} className={`rounded-2xl border border-slate-100 p-4 ${b.chip}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{b.label}</p>
+              <p className={`font-display font-black text-2xl mt-1 ${b.accent}`}>{b.data.dishesQty}</p>
+              <p className="text-[10px] text-slate-500 -mt-0.5">plats vendus</p>
+              <div className="mt-2 pt-2 border-t border-white/60 flex items-center justify-between text-[10px] text-slate-500">
+                <span className="flex items-center gap-1"><Wine className="w-3 h-3" /> {b.data.drinksQty} boissons</span>
+                <span className="font-mono font-bold text-slate-700">{maskAr(b.data.revenue)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Meilleures ventes : plats & boissons les plus commandés */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Top plats */}
@@ -539,9 +585,19 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
             <p className="text-xs text-slate-400 py-6 text-center">Aucune vente de plat pour l'instant.</p>
           ) : (
             <div className="space-y-3">
-              {topDishes.map((it, i) => (
+              {topDishes.map((it, i) => {
+                const img = menuImageById.get(it.id);
+                return (
                 <div key={i} className="flex items-center gap-3">
                   <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-yellow-400 text-slate-900' : 'bg-slate-100 text-slate-500'}`}>{i + 1}</span>
+                  {/* Vignette du plat (image de la carte, sinon icône) */}
+                  <div className="w-10 h-10 shrink-0 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center">
+                    {img ? (
+                      <img src={img} alt={it.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Utensils className="w-4 h-4 text-slate-300" />
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-slate-800 truncate">{it.name}</span>
@@ -552,7 +608,8 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -566,9 +623,19 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
             <p className="text-xs text-slate-400 py-6 text-center">Aucune vente de boisson pour l'instant.</p>
           ) : (
             <div className="space-y-3">
-              {topDrinks.map((it, i) => (
+              {topDrinks.map((it, i) => {
+                const img = menuImageById.get(it.id);
+                return (
                 <div key={i} className="flex items-center gap-3">
                   <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-yellow-400 text-slate-900' : 'bg-slate-100 text-slate-500'}`}>{i + 1}</span>
+                  {/* Vignette de la boisson */}
+                  <div className="w-10 h-10 shrink-0 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center">
+                    {img ? (
+                      <img src={img} alt={it.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Wine className="w-4 h-4 text-slate-300" />
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-slate-800 truncate">{it.name}</span>
@@ -579,7 +646,8 @@ export default function DashboardCharts({ clients, personnel, menuItems, orders,
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

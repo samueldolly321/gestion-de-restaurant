@@ -6,10 +6,12 @@ export interface DbUser {
   photoUrl: string | null;
   createdAt: string;
   restaurantName?: string | null;
+  restaurantSlogan?: string | null;
   restaurantLogoUrl?: string | null;
   restaurantPhone?: string | null;
   restaurantAddress?: string | null;
-  role: 'super_admin' | 'gerant' | string;
+  role: 'super_admin' | 'gerant' | 'comptable' | 'chef_caisse' | 'serveur' | string;
+  allowedTabs?: string[]; // onglets accessibles (effectifs) renvoyés par le serveur
   ownerId?: number | null; // propriétaire du restaurant si compte rattaché (gérant)
   dataOwnerId?: number; // id effectif à utiliser pour toutes les données partagées
 }

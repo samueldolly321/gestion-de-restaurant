@@ -32,12 +32,17 @@ import {
   Phone,
   ArrowLeft,
   Mail,
-  ShieldCheck
+  ShieldCheck,
+  UserCog,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ROLE_LABELS } from './lib/permissions.ts';
 
 // Components
 import DashboardCharts from './components/DashboardCharts.tsx';
+import UsersManager from './components/UsersManager.tsx';
 import NotificationPanel from './components/NotificationPanel.tsx';
 import ClientsManager from './components/ClientsManager.tsx';
 import PersonnelManager from './components/PersonnelManager.tsx';
@@ -56,7 +61,7 @@ import AssetsManager from './components/AssetsManager.tsx';
 
 import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset } from './types.ts';
 
-type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets';
+type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets' | 'users';
 
 export default function App() {
   // Authentication states
@@ -69,6 +74,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authOwnerEmail, setAuthOwnerEmail] = useState(''); // e-mail du super admin à rejoindre (gérant)
   const [authPassword, setAuthPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false); // oeil afficher/masquer le mot de passe
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [selectedRole, setSelectedRole] = useState<'super_admin' | 'gerant'>('super_admin');
   const [loginSubView, setLoginSubView] = useState<'login' | 'contact' | 'privacy'>('login');
@@ -95,6 +101,7 @@ export default function App() {
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [users, setUsers] = useState<DbUser[]>([]); // membres de l'espace (onglet Utilisateurs, super admin)
 
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -134,10 +141,22 @@ export default function App() {
     });
   }, []);
 
-  // Safeguard redirect if user is Gérant on a restricted tab
+  // Onglets accessibles par l'utilisateur courant (envoyés par le serveur ; 'users' = super admin uniquement).
+  const isSuperAdmin = dbUser?.role === 'super_admin';
+  const allowedTabs: string[] = dbUser?.allowedTabs || [];
+  // Accès test (Admin) : on masque les onglets Paramètres et Utilisateurs.
+  const isTestLogin = token === 'TEST-LOGIN-TOKEN' || dbUser?.email === 'admin@test.local';
+  const canAccessTab = (tabId: string) => {
+    if (isTestLogin && (tabId === 'settings' || tabId === 'users')) return false;
+    return tabId === 'users' ? isSuperAdmin : allowedTabs.includes(tabId);
+  };
+
+  // Garde-fou : si l'onglet actif n'est pas autorisé pour ce rôle, on bascule sur le premier onglet permis.
   useEffect(() => {
-    if (dbUser && dbUser.role === 'gerant' && activeTab === 'finance') {
-      setActiveTab('dashboard');
+    if (!dbUser) return;
+    if (!canAccessTab(activeTab)) {
+      const firstAllowed = (dbUser.allowedTabs && dbUser.allowedTabs[0]) || 'orders';
+      setActiveTab(firstAllowed as TabType);
     }
   }, [dbUser, activeTab]);
 
@@ -159,6 +178,7 @@ export default function App() {
     const ownerId = userData.dataOwnerId || userData.id;
     initializeSocket(ownerId);
     fetchWorkspaceData(jwtToken, ownerId);
+    if (userData.role === 'super_admin') fetchUsers(jwtToken);
   };
 
   // 2. Récupère l'utilisateur courant à partir d'un jeton (au rechargement de la page).
@@ -547,11 +567,60 @@ export default function App() {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setDbUser(null);
     setToken(null);
+    setUsers([]);
     setIsAuthLoading(false);
     if (socketRef.current) {
       socketRef.current.disconnect();
       socketRef.current = null;
     }
+  };
+
+  // --- UTILISATEURS (super admin) ---
+  const fetchUsers = async (jwtToken?: string) => {
+    const tk = jwtToken || token;
+    if (!tk) return;
+    try {
+      const res = await fetch('/api/users', { headers: { 'Authorization': `Bearer ${tk}` } });
+      if (!res.ok) return; // 403 pour les non super admin : on ignore silencieusement
+      setUsers(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch users', err);
+    }
+  };
+
+  const handleAddUser = async (payload: any) => {
+    if (!token) return;
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Création du compte échouée.");
+    await fetchUsers();
+  };
+
+  const handleUpdateUser = async (id: number, payload: any) => {
+    if (!token) return;
+    const res = await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Mise à jour du compte échouée.");
+    await fetchUsers();
+  };
+
+  const handleDeleteUser = async (id: number) => {
+    if (!token) return;
+    const res = await fetch(`/api/users/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Suppression du compte échouée.");
+    await fetchUsers();
   };
 
   // --- CLIENTS MUTATORS ---
@@ -1227,6 +1296,7 @@ export default function App() {
   // --- BRAND CONFIG UPDATE ---
   const handleUpdateConfig = async (updates: {
     restaurantName: string;
+    restaurantSlogan?: string | null;
     restaurantLogoUrl: string | null;
     restaurantPhone?: string | null;
     restaurantAddress?: string | null;
@@ -1244,12 +1314,17 @@ export default function App() {
         },
         body: JSON.stringify({ dbUserId: dataOwnerId, ...updates })
       });
-      if (!res.ok) throw new Error('Impossible de modifier les paramètres.');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 413) throw new Error("Image trop volumineuse. Choisissez un logo plus léger (moins de ~10 Mo).");
+        throw new Error(data.error || 'Impossible de modifier les paramètres.');
+      }
       const updatedOwner = await res.json();
       // On met à jour l'affichage local (nom/logo/tél/adresse) sans écraser l'identité de session (id, rôle, uid).
       setDbUser((prev) => prev ? {
         ...prev,
         restaurantName: updatedOwner.restaurantName,
+        restaurantSlogan: updatedOwner.restaurantSlogan,
         restaurantLogoUrl: updatedOwner.restaurantLogoUrl,
         restaurantPhone: updatedOwner.restaurantPhone,
         restaurantAddress: updatedOwner.restaurantAddress,
@@ -1257,6 +1332,20 @@ export default function App() {
     } catch (err: any) {
       setErrorMsg(err.message);
     }
+  };
+
+  // Réinitialise les données financières de l'espace (super admin) puis recharge les données.
+  const handleResetFinancial = async () => {
+    if (!token || !dataOwnerId) return;
+    const res = await fetch('/api/reset-financial', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'La réinitialisation a échoué.');
+    // On vide localement + on recharge l'espace de travail (commandes/dépenses/rentrées).
+    fetchWorkspaceData(token, dataOwnerId);
+    return data;
   };
 
   // Mark single notification as read
@@ -1385,6 +1474,12 @@ export default function App() {
   if (!dbUser) {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between relative overflow-hidden font-sans">
+        {/* Image de fond + voile transparent (remplaçable : public/login-bg.jpg) */}
+        <div
+          className="absolute inset-0 bg-cover bg-center pointer-events-none"
+          style={{ backgroundImage: "url('/login-bg.jpg')" }}
+        />
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] pointer-events-none" />
         {/* Soft Background Warm Elements */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(220,38,38,0.06),transparent_60%)] pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(250,204,21,0.06),transparent_60%)] pointer-events-none" />
@@ -1559,7 +1654,7 @@ export default function App() {
                   </span>
                 </h1>
 
-                <p className="text-slate-500 text-sm sm:text-base leading-relaxed max-w-lg">
+                <p className="text-black text-sm sm:text-base leading-relaxed max-w-lg">
                   Simplifiez la vie de votre établissement gastronomique à Madagascar. Suivez vos stocks, organisez vos réservations sur le calendrier live, pilotez les salaires et surveillez vos additions en Ariary.
                 </p>
 
@@ -1725,14 +1820,25 @@ export default function App() {
                       <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
                         Mot de passe
                       </label>
-                      <input
-                        type="password"
-                        required
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none text-slate-800"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showAuthPassword ? 'text' : 'password'}
+                          required
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full px-3.5 py-2 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthPassword((v) => !v)}
+                          aria-label={showAuthPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                          title={showAuthPassword ? 'Masquer' : 'Afficher'}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          {showAuthPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     {isRegisterMode && (
@@ -1852,7 +1958,16 @@ export default function App() {
 
   // APP WORKSPACE (Signed In)
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col lg:flex-row font-sans text-slate-800 relative">
+    <div
+      className="min-h-screen bg-slate-50/50 flex flex-col lg:flex-row font-sans text-slate-800 relative"
+      style={{
+        // Image de fond + voile transparent, sur TOUS les onglets (remplaçable : public/home-bg.jpg)
+        backgroundImage: "linear-gradient(rgba(248,250,252,0.9), rgba(248,250,252,0.92)), url('/home-bg.jpg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed',
+      }}
+    >
       {/* Backdrop for mobile */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1892,9 +2007,9 @@ export default function App() {
                 <span className="font-display font-extrabold text-sm tracking-tight text-slate-950 block leading-tight">
                   {dbUser?.restaurantName || 'RestoPilote'}
                 </span>
-                <span className="text-[9px] font-mono font-extrabold text-red-600 block flex items-center gap-1 mt-1">
-                  <span className="h-1.5 w-1.5 bg-yellow-400 rounded-full animate-ping" />
-                  Postgres Live
+                <span className="text-[9px] font-semibold text-red-600 block flex items-center gap-1 mt-1 max-w-[150px] truncate" title={dbUser?.restaurantSlogan || ''}>
+                  <span className="h-1.5 w-1.5 bg-yellow-400 rounded-full shrink-0" />
+                  {dbUser?.restaurantSlogan || 'Votre slogan ici'}
                 </span>
               </div>
             </div>
@@ -1911,22 +2026,23 @@ export default function App() {
           {/* Sidebar Navigation Links */}
           <nav className="flex-1 p-4 space-y-1">
             {[
-              { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
-              { id: 'orders', label: 'Tables & Addition', icon: ShoppingBag },
-              { id: 'menu', label: 'Carte du Chef', icon: Utensils },
-              { id: 'reservations', label: 'Réservations', icon: Calendar },
-              { id: 'personnel', label: 'Personnel', icon: Clock },
-              { id: 'deliveries', label: 'Livraisons', icon: Truck },
-              { id: 'clients', label: 'Clients', icon: Users },
-              { id: 'calendar', label: 'Calendrier Live', icon: Calendar },
-              { id: 'stocks', label: 'Stocks & Fournisseurs', icon: Package },
-              { id: 'assets', label: 'Biens & Matériel', icon: Armchair },
-              { id: 'finance', label: 'Argent (Finances)', icon: Landmark, roleRestriction: 'super_admin' },
-              { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp },
-              { id: 'expenses', label: 'Dépenses diverses', icon: Receipt },
-              { id: 'ia', label: 'Analyses IA & Mérite', icon: Sparkles },
-              { id: 'settings', label: 'Paramètres', icon: Settings },
-            ].filter(tab => !tab.roleRestriction || dbUser?.role === tab.roleRestriction).map((tab) => {
+              { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, tint: 'bg-indigo-100 text-indigo-600' },
+              { id: 'orders', label: 'Tables & Addition', icon: ShoppingBag, tint: 'bg-red-100 text-red-600' },
+              { id: 'menu', label: 'Carte du Chef', icon: Utensils, tint: 'bg-orange-100 text-orange-600' },
+              { id: 'stocks', label: 'Stocks & Fournisseurs', icon: Package, tint: 'bg-amber-100 text-amber-600' },
+              { id: 'reservations', label: 'Réservations', icon: Calendar, tint: 'bg-pink-100 text-pink-600' },
+              { id: 'personnel', label: 'Personnel', icon: Clock, tint: 'bg-cyan-100 text-cyan-600' },
+              { id: 'deliveries', label: 'Livraisons', icon: Truck, tint: 'bg-blue-100 text-blue-600' },
+              { id: 'clients', label: 'Clients', icon: Users, tint: 'bg-teal-100 text-teal-600' },
+              { id: 'calendar', label: 'Calendrier Live', icon: Calendar, tint: 'bg-fuchsia-100 text-fuchsia-600' },
+              { id: 'assets', label: 'Biens & Matériel', icon: Armchair, tint: 'bg-lime-100 text-lime-600' },
+              { id: 'finance', label: 'Argent (Finances)', icon: Landmark, tint: 'bg-emerald-100 text-emerald-600' },
+              { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp, tint: 'bg-green-100 text-green-600' },
+              { id: 'expenses', label: 'Dépenses diverses', icon: Receipt, tint: 'bg-rose-100 text-rose-600' },
+              { id: 'ia', label: 'Analyses IA & Mérite', icon: Sparkles, tint: 'bg-violet-100 text-violet-600' },
+              { id: 'users', label: 'Utilisateurs', icon: UserCog, tint: 'bg-red-100 text-red-700' },
+              { id: 'settings', label: 'Paramètres', icon: Settings, tint: 'bg-slate-200 text-slate-600' },
+            ].filter(tab => canAccessTab(tab.id)).map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -1936,13 +2052,15 @@ export default function App() {
                     setActiveTab(tab.id as TabType);
                     setIsSidebarOpen(false); // Auto-close on mobile
                   }}
-                  className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-3 cursor-pointer text-left ${
+                  className={`w-full px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-3 cursor-pointer text-left ${
                     isActive
                       ? 'bg-red-600 text-white shadow-md shadow-red-600/10'
                       : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : tab.tint}`}>
+                    <Icon className="w-4 h-4" strokeWidth={2.5} />
+                  </span>
                   <span>{tab.label}</span>
                 </button>
               );
@@ -1971,7 +2089,7 @@ export default function App() {
                   {dbUser?.displayName}
                 </span>
                 <span className="block text-[9px] text-slate-400 font-semibold mt-0.5">
-                  {dbUser?.role === 'super_admin' ? 'Super Admin' : 'Gérant'}
+                  {ROLE_LABELS[dbUser?.role || ''] || dbUser?.role}
                 </span>
               </div>
             </div>
@@ -2019,6 +2137,7 @@ export default function App() {
                   {activeTab === 'expenses' && 'Dépenses diverses'}
                   {activeTab === 'menu' && 'Carte du Chef'}
                   {activeTab === 'settings' && 'Configuration de l\'Établissement'}
+                  {activeTab === 'users' && 'Utilisateurs & Accès'}
                 </h2>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">
                   {activeTab === 'dashboard' && 'Aperçu analytique et activités récentes'}
@@ -2035,6 +2154,7 @@ export default function App() {
                   {activeTab === 'expenses' && 'Loyer, charges et factures (photo incluse)'}
                   {activeTab === 'menu' && 'Plats, boissons et gestion des disponibilités'}
                   {activeTab === 'settings' && 'Paramètres généraux du restaurant'}
+                  {activeTab === 'users' && 'Créer des comptes et gérer les accès par onglet (super admin)'}
                 </p>
               </div>
             </div>
@@ -2233,6 +2353,7 @@ export default function App() {
                   personnel={personnel}
                   clients={clients}
                   restaurantName={dbUser?.restaurantName}
+                  restaurantLogoUrl={dbUser?.restaurantLogoUrl}
                   onAddOrder={handleAddOrder}
                   onEditOrder={handleEditOrder}
                   onDeleteOrder={handleDeleteOrder}
@@ -2466,6 +2587,7 @@ export default function App() {
                   <SettingsManager
                     dbUser={dbUser}
                     onUpdateConfig={handleUpdateConfig}
+                    onResetFinancial={handleResetFinancial}
                   />
                 )}
               </motion.div>
@@ -2482,6 +2604,25 @@ export default function App() {
                 <AIManager
                   token={token}
                   dbUserId={dataOwnerId || null}
+                />
+              </motion.div>
+            )}
+
+            {activeTab === 'users' && (
+              <motion.div
+                key="users-view"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+              >
+                <UsersManager
+                  users={users}
+                  currentUserId={dbUser?.id}
+                  ownerId={dataOwnerId}
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser}
                 />
               </motion.div>
             )}

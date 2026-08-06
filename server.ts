@@ -9,11 +9,16 @@ import { GoogleGenAI } from '@google/genai';
 import bcrypt from 'bcryptjs';
 import { requireAuth, AuthRequest, TEST_LOGIN_TOKEN } from './src/middleware/auth.ts';
 import { signAppToken } from './src/lib/auth-jwt.ts';
+import { effectiveTabs } from './src/lib/permissions.ts';
 import {
   getOrCreateUser,
   getUserByUid,
   getUserByEmail,
   createUserWithPassword,
+  getWorkspaceUsers,
+  updateUserById,
+  deleteUserById,
+  resetFinancialData,
   getUserById,
   updateUserConfig,
   getClients,
@@ -114,7 +119,8 @@ async function startServer() {
     });
   });
 
-  app.use(express.json());
+  // Limite élevée : les images (logo, photos de plats, avatars, factures) sont envoyées en base64 dans le JSON.
+  app.use(express.json({ limit: '15mb' }));
 
   // API Route: Health check
   app.get('/api/health', (req, res) => {
@@ -125,11 +131,14 @@ async function startServer() {
   // Pour un gérant rattaché, on affiche aussi le nom/logo du restaurant du propriétaire.
   async function buildSessionUser(dbUser: any) {
     const dataOwnerId = dbUser.ownerId || dbUser.id;
-    const sessionUser: any = { ...dbUser, dataOwnerId };
+    // Onglets réellement accessibles (perso ou défaut du rôle) — le front filtre la navigation dessus.
+    const allowedTabs = effectiveTabs(dbUser.role, dbUser.allowedTabs);
+    const sessionUser: any = { ...dbUser, dataOwnerId, allowedTabs };
     if (dbUser.ownerId) {
       const owner = await getUserById(dbUser.ownerId);
       if (owner) {
         sessionUser.restaurantName = owner.restaurantName;
+        sessionUser.restaurantSlogan = owner.restaurantSlogan;
         sessionUser.restaurantLogoUrl = owner.restaurantLogoUrl;
         sessionUser.restaurantPhone = owner.restaurantPhone;
         sessionUser.restaurantAddress = owner.restaurantAddress;
@@ -241,6 +250,117 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error fetching current user:', error);
       res.status(500).json({ error: error.message || 'Échec de la récupération de la session.' });
+    }
+  });
+
+  // --- USERS (GESTION DES COMPTES) ENDPOINTS ---
+  // Réservés au super admin. Il gère les membres de SON espace de travail (owner_id = son id).
+
+  // Garde : récupère l'appelant et exige le rôle super_admin. Renvoie l'appelant si OK, sinon répond 403.
+  async function requireSuperAdminUser(req: AuthRequest, res: express.Response) {
+    const caller = req.user?.uid ? await getUserByUid(req.user.uid) : null;
+    if (!caller || caller.role !== 'super_admin') {
+      res.status(403).json({ error: 'Réservé au super admin.' });
+      return null;
+    }
+    return caller;
+  }
+
+  app.get('/api/users', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = await requireSuperAdminUser(req, res);
+      if (!caller) return;
+      const ownerId = caller.ownerId || caller.id;
+      const list = (await getWorkspaceUsers(ownerId)) || [];
+      // On n'expose jamais le hash du mot de passe.
+      res.json(list.map(({ passwordHash, ...u }: any) => ({
+        ...u,
+        allowedTabs: effectiveTabs(u.role, u.allowedTabs),
+      })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/users', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = await requireSuperAdminUser(req, res);
+      if (!caller) return;
+      const { email, password, displayName, role, allowedTabs } = req.body || {};
+      if (!email || !password) {
+        return res.status(400).json({ error: 'E-mail et mot de passe requis.' });
+      }
+      if (String(password).length < 6) {
+        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+      }
+      const normalizedEmail = String(email).trim().toLowerCase();
+      if (await getUserByEmail(normalizedEmail)) {
+        return res.status(409).json({ error: 'Cette adresse e-mail est déjà utilisée.' });
+      }
+      const passwordHash = await bcrypt.hash(String(password), 10);
+      const ownerId = caller.ownerId || caller.id;
+      const created = await createUserWithPassword({
+        email: normalizedEmail,
+        passwordHash,
+        displayName: displayName || normalizedEmail.split('@')[0],
+        role: role || 'serveur',
+        ownerId,
+        allowedTabs: Array.isArray(allowedTabs) ? allowedTabs : null,
+      });
+      const { passwordHash: _ph, ...safe } = created as any;
+      res.json({ ...safe, allowedTabs: effectiveTabs(safe.role, safe.allowedTabs) });
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      res.status(500).json({ error: error.message || 'Création du compte échouée.' });
+    }
+  });
+
+  app.put('/api/users/:id(\\d+)', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = await requireSuperAdminUser(req, res);
+      if (!caller) return;
+      const id = parseInt(req.params.id);
+      const target = await getUserById(id);
+      const ownerId = caller.ownerId || caller.id;
+      // On ne peut modifier qu'un membre de son propre espace (pas le propriétaire lui-même via cette route).
+      if (!target || (target.ownerId || target.id) !== ownerId || target.id === ownerId) {
+        return res.status(403).json({ error: 'Compte non modifiable.' });
+      }
+      const { role, allowedTabs, displayName, password } = req.body || {};
+      const updates: any = {};
+      if (role !== undefined) updates.role = role;
+      if (allowedTabs !== undefined) updates.allowedTabs = Array.isArray(allowedTabs) ? allowedTabs : null;
+      if (displayName !== undefined) updates.displayName = displayName;
+      if (password) {
+        if (String(password).length < 6) {
+          return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+        }
+        updates.passwordHash = await bcrypt.hash(String(password), 10);
+      }
+      const updated = await updateUserById(id, updates);
+      const { passwordHash: _ph, ...safe } = updated as any;
+      res.json({ ...safe, allowedTabs: effectiveTabs(safe.role, safe.allowedTabs) });
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      res.status(500).json({ error: error.message || 'Mise à jour du compte échouée.' });
+    }
+  });
+
+  app.delete('/api/users/:id(\\d+)', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = await requireSuperAdminUser(req, res);
+      if (!caller) return;
+      const id = parseInt(req.params.id);
+      const target = await getUserById(id);
+      const ownerId = caller.ownerId || caller.id;
+      if (!target || (target.ownerId || target.id) !== ownerId || target.id === ownerId) {
+        return res.status(403).json({ error: 'Compte non supprimable.' });
+      }
+      await deleteUserById(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      res.status(500).json({ error: error.message || 'Suppression du compte échouée.' });
     }
   });
 
@@ -370,10 +490,10 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing dbUserId or name' });
       }
 
-      // Restriction : seul le super_admin peut fixer un salaire. Un gérant crée avec un salaire à 0.
+      // Restriction : super_admin et gérant peuvent fixer un salaire ; les autres rôles créent avec 0.
       const creator = req.user?.uid ? await getUserByUid(req.user.uid) : null;
-      const creatorIsGerant = creator?.role === 'gerant';
-      const effectiveSalary = creatorIsGerant ? 0.0 : (salary ? parseFloat(salary) : 0.0);
+      const canSetSalary = creator?.role === 'super_admin' || creator?.role === 'gerant';
+      const effectiveSalary = canSetSalary ? (salary ? parseFloat(salary) : 0.0) : 0.0;
 
       const newMember = await createPersonnel(
         parseInt(dbUserId),
@@ -417,9 +537,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
 
-      // Restriction : un gérant ne peut pas modifier le salaire (on laisse la valeur existante inchangée).
+      // Restriction : super_admin et gérant peuvent modifier le salaire ; sinon on laisse la valeur inchangée.
       const editor = req.user?.uid ? await getUserByUid(req.user.uid) : null;
-      const editorIsGerant = editor?.role === 'gerant';
+      const canSetSalary = editor?.role === 'super_admin' || editor?.role === 'gerant';
 
       const updated = await updatePersonnel(personnelId, parseInt(dbUserId), {
         name,
@@ -428,7 +548,7 @@ async function startServer() {
         role,
         status,
         hourlyRate: hourlyRate ? parseFloat(hourlyRate) : undefined,
-        salary: editorIsGerant ? undefined : (salary ? parseFloat(salary) : undefined),
+        salary: canSetSalary ? (salary ? parseFloat(salary) : undefined) : undefined,
         leaveStart,
         leaveEnd,
         hireDate,
@@ -881,7 +1001,7 @@ async function startServer() {
   // --- CONFIG/SETTINGS ENDPOINTS ---
   app.put('/api/users/config', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, restaurantName, restaurantLogoUrl, restaurantPhone, restaurantAddress, role } = req.body;
+      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, role } = req.body;
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
@@ -894,6 +1014,7 @@ async function startServer() {
 
       const updated = await updateUserConfig(parseInt(dbUserId), {
         restaurantName,
+        restaurantSlogan: restaurantSlogan !== undefined ? (restaurantSlogan || null) : undefined,
         restaurantLogoUrl,
         restaurantPhone: restaurantPhone !== undefined ? (restaurantPhone || null) : undefined,
         restaurantAddress: restaurantAddress !== undefined ? (restaurantAddress || null) : undefined,
@@ -902,6 +1023,21 @@ async function startServer() {
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // API Route: Reset des données financières (super admin uniquement).
+  // Efface additions/commandes, dépenses (dont récurrentes) et rentrées de l'espace de travail.
+  app.post('/api/reset-financial', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = await requireSuperAdminUser(req, res);
+      if (!caller) return;
+      const ownerId = caller.ownerId || caller.id;
+      const result = await resetFinancialData(ownerId);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Error resetting financial data:', error);
+      res.status(500).json({ error: error.message || 'La réinitialisation a échoué.' });
     }
   });
 

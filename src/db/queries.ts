@@ -72,6 +72,7 @@ export async function updateUserConfig(
   dbUserId: number,
   updates: {
     restaurantName?: string;
+    restaurantSlogan?: string | null;
     restaurantLogoUrl?: string | null;
     restaurantPhone?: string | null;
     restaurantAddress?: string | null;
@@ -109,20 +110,22 @@ export async function getUserByEmail(email: string) {
   }
 }
 
-// Crée un utilisateur avec mot de passe (haché). Utilisé par /api/auth/register.
+// Crée un utilisateur avec mot de passe (haché). Utilisé par /api/auth/register et l'onglet Utilisateurs.
 export async function createUserWithPassword(params: {
   email: string;
   passwordHash: string;
   displayName?: string;
   role?: string;
   ownerEmail?: string; // e-mail du super admin à rejoindre (pour un gérant)
+  ownerId?: number | null; // rattachement direct (quand le super admin crée un membre depuis l'app)
+  allowedTabs?: string[] | null;
 }) {
   try {
     const { email, passwordHash, displayName, role, ownerEmail } = params;
 
-    // Résolution du propriétaire : si un e-mail de super admin est fourni, on rattache le compte.
-    let ownerId: number | null = null;
-    if (ownerEmail) {
+    // Résolution du propriétaire : rattachement direct prioritaire, sinon via l'e-mail du super admin.
+    let ownerId: number | null = params.ownerId ?? null;
+    if (ownerId == null && ownerEmail) {
       const owners = await db.select().from(users).where(eq(users.email, ownerEmail)).limit(1);
       if (owners[0]) {
         ownerId = owners[0].id;
@@ -137,11 +140,69 @@ export async function createUserWithPassword(params: {
     };
     if (role) insertValues.role = role;
     if (ownerId) insertValues.ownerId = ownerId;
+    if (params.allowedTabs !== undefined) insertValues.allowedTabs = params.allowedTabs;
 
     const result = await db.insert(users).values(insertValues).returning();
     return result[0];
   } catch (error) {
     handleDbError("Failed to create user with password", error);
+  }
+}
+
+// Liste les comptes d'un espace de travail (le propriétaire + les membres rattachés).
+export async function getWorkspaceUsers(ownerId: number) {
+  try {
+    return await db.select().from(users)
+      .where(sql`${users.id} = ${ownerId} OR ${users.ownerId} = ${ownerId}`)
+      .orderBy(users.id);
+  } catch (error) {
+    handleDbError("Failed to fetch workspace users", error);
+  }
+}
+
+// Met à jour un membre (rôle, onglets, nom, et mot de passe optionnel). Réservé au super admin côté serveur.
+export async function updateUserById(
+  id: number,
+  updates: { role?: string; allowedTabs?: string[] | null; displayName?: string; passwordHash?: string }
+) {
+  try {
+    const set: any = {};
+    if (updates.role !== undefined) set.role = updates.role;
+    if (updates.allowedTabs !== undefined) set.allowedTabs = updates.allowedTabs;
+    if (updates.displayName !== undefined) set.displayName = updates.displayName;
+    if (updates.passwordHash !== undefined) set.passwordHash = updates.passwordHash;
+    const result = await db.update(users).set(set).where(eq(users.id, id)).returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update user", error);
+  }
+}
+
+// Supprime un membre.
+export async function deleteUserById(id: number) {
+  try {
+    await db.delete(users).where(eq(users.id, id));
+  } catch (error) {
+    handleDbError("Failed to delete user", error);
+  }
+}
+
+// Remet à zéro les DONNÉES FINANCIÈRES d'un espace : additions/commandes, dépenses (dont récurrentes) et rentrées.
+// Les order_items partent en cascade avec les commandes. Ne touche PAS aux clients/personnel/carte/stocks.
+export async function resetFinancialData(ownerId: number) {
+  try {
+    const delOrders = await db.delete(orders).where(eq(orders.userId, ownerId)).returning({ id: orders.id });
+    const delExpenses = await db.delete(expenses).where(eq(expenses.userId, ownerId)).returning({ id: expenses.id });
+    const delIncomes = await db.delete(incomes).where(eq(incomes.userId, ownerId)).returning({ id: incomes.id });
+    const delRecurring = await db.delete(recurringExpenses).where(eq(recurringExpenses.userId, ownerId)).returning({ id: recurringExpenses.id });
+    return {
+      orders: delOrders.length,
+      expenses: delExpenses.length,
+      incomes: delIncomes.length,
+      recurringExpenses: delRecurring.length,
+    };
+  } catch (error) {
+    handleDbError("Failed to reset financial data", error);
   }
 }
 

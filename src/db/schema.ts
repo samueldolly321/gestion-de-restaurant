@@ -12,10 +12,12 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at').defaultNow(),
   // App Config customization
   restaurantName: text('restaurant_name').default('RestoPilote'),
+  restaurantSlogan: text('restaurant_slogan'), // slogan affiché sous le nom (modifiable dans Paramètres)
   restaurantLogoUrl: text('restaurant_logo_url'),
   restaurantPhone: text('restaurant_phone'), // Téléphone du restaurant (modifiable)
   restaurantAddress: text('restaurant_address'), // Adresse du restaurant (modifiable)
-  role: text('role').notNull().default('super_admin'), // 'super_admin' or 'gerant'
+  role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
+  allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
   ownerId: integer('owner_id'), // Si défini, le compte partage les données de cet utilisateur (le super admin propriétaire)
 });
 

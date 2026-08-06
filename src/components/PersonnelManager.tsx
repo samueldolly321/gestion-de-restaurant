@@ -33,8 +33,7 @@ export default function PersonnelManager({
   const [role, setRole] = useState('serveur');
   const [customRole, setCustomRole] = useState(''); // rôle libre quand « Autre » est choisi
   const [status, setStatus] = useState('actif');
-  const [hourlyRate, setHourlyRate] = useState(15.0);
-  const [salary, setSalary] = useState(1200000); // Default Ariary salary
+  const [salary, setSalary] = useState(1200000); // Salaire mensuel en Ariary
   const [hireDate, setHireDate] = useState('');
   const [leaveStartDate, setLeaveStartDate] = useState('');
   const [leaveEndDate, setLeaveEndDate] = useState('');
@@ -46,7 +45,8 @@ export default function PersonnelManager({
   // Véhicules disponibles (biens de catégorie « Véhicule »).
   const vehicles = assets.filter((a) => a.category === 'vehicule');
 
-  const canAccessSalaries = userRole === 'super_admin';
+  // Le super admin ET le gérant peuvent voir/modifier les salaires (le gérant peut tout voir).
+  const canAccessSalaries = userRole === 'super_admin' || userRole === 'gerant';
 
   // Format Ariary helper
   const formatAr = (amount: number) => {
@@ -66,7 +66,6 @@ export default function PersonnelManager({
     setRole('serveur');
     setCustomRole('');
     setStatus('actif');
-    setHourlyRate(10000); // 10k Ar/hour
     setSalary(1200000); // 1.2M Ar/month
     setHireDate(new Date().toISOString().split('T')[0]);
     setLeaveStartDate('');
@@ -92,7 +91,6 @@ export default function PersonnelManager({
       setCustomRole(staff.role);
     }
     setStatus(staff.status);
-    setHourlyRate(staff.hourlyRate);
     setSalary(staff.salary || 0);
     setHireDate(staff.hireDate || '');
     setLeaveStartDate(staff.leaveStart || '');
@@ -135,7 +133,6 @@ export default function PersonnelManager({
       phone: phone || null,
       role: effectiveRole,
       status,
-      hourlyRate: Number(hourlyRate),
       hireDate: hireDate || null,
       leaveStartDate: leaveStartDate || null,
       leaveEndDate: leaveEndDate || null,
@@ -308,12 +305,7 @@ export default function PersonnelManager({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-50">
-                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-100/50">
-                      <span className="block text-[8px] font-bold text-slate-400 uppercase">Taux Horaire</span>
-                      <span className="font-mono text-xs font-bold text-slate-700">{formatAr(staff.hourlyRate)}/h</span>
-                    </div>
-
+                  <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-50">
                     <div className="bg-slate-50 p-2 rounded-xl border border-slate-100/50 relative">
                       <span className="block text-[8px] font-bold text-slate-400 uppercase">Salaire Mensuel</span>
                       {canAccessSalaries ? (
@@ -455,26 +447,15 @@ export default function PersonnelManager({
                 {cvName && <p className="text-[9px] text-slate-400 mt-1 truncate">{cvName}</p>}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Téléphone</label>
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800"
-                    placeholder="034 56 789 01"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Taux Horaire (Ar / h) *</label>
-                  <input
-                    type="number"
-                    value={hourlyRate}
-                    onChange={(e) => setHourlyRate(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 font-mono"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Téléphone</label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800"
+                  placeholder="034 56 789 01"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

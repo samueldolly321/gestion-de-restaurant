@@ -18,6 +18,7 @@ interface OrdersManagerProps {
   personnel: Personnel[];
   clients: Client[];
   restaurantName?: string | null;
+  restaurantLogoUrl?: string | null;
   onAddOrder: (formData: any) => Promise<void>;
   onEditOrder: (id: number, formData: any) => Promise<void>;
   onDeleteOrder: (id: number) => Promise<void>;
@@ -29,6 +30,7 @@ export default function OrdersManager({
   personnel,
   clients,
   restaurantName,
+  restaurantLogoUrl,
   onAddOrder,
   onEditOrder,
   onDeleteOrder
@@ -85,6 +87,12 @@ export default function OrdersManager({
         .map((i) => (i.menuItemId === menuItemId ? { ...i, quantity: i.quantity + delta } : i))
         .filter((i) => i.quantity > 0)
     );
+  };
+
+  // Saisie directe de la quantité (clavier). Minimum 1 pour ne pas faire disparaître la ligne en tapant.
+  const setQty = (menuItemId: number, value: string) => {
+    const q = Math.max(1, Math.floor(Number(value) || 1));
+    setItems((prev) => prev.map((i) => (i.menuItemId === menuItemId ? { ...i, quantity: q } : i)));
   };
 
   const removeItem = (menuItemId: number) => {
@@ -249,6 +257,10 @@ export default function OrdersManager({
     }
     const resto = restaurantName || 'RestoPilote';
     const dateStr = new Date(order.createdAt).toLocaleString('fr-FR');
+    // Logo du restaurant en haut, en noir & blanc (grayscale) pour l'impression thermique.
+    const logoHtml = restaurantLogoUrl
+      ? `<img class="logo" src="${restaurantLogoUrl}" alt="${resto.replace(/</g, '&lt;')}" />`
+      : '';
     const rows = (order.items || []).map((it) => `
       <tr>
         <td class="l">${it.quantity}× ${(it.name || 'Article').replace(/</g, '&lt;')}</td>
@@ -258,8 +270,13 @@ export default function OrdersManager({
     win.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8">
       <title>Addition — Table ${order.tableNumber}</title>
       <style>
+        /* Format ticket 80 mm par défaut (imprimantes thermiques / petits appareils) */
+        @page { size: 80mm auto; margin: 0; }
         * { font-family: 'Courier New', Courier, monospace; box-sizing: border-box; }
-        body { width: 300px; margin: 0 auto; padding: 14px; color: #000; }
+        body { width: 80mm; margin: 0 auto; padding: 4mm 3mm; color: #000; }
+        .logo { display: block; margin: 0 auto 6px; max-width: 55mm; max-height: 22mm; object-fit: contain;
+          filter: grayscale(1) contrast(1.15); -webkit-filter: grayscale(1) contrast(1.15);
+          print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         h1 { font-size: 16px; text-align: center; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
         .sub { text-align: center; font-size: 11px; margin: 3px 0 10px; }
         hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
@@ -269,6 +286,7 @@ export default function OrdersManager({
         .total td { font-size: 15px; font-weight: bold; padding-top: 4px; }
         .foot { text-align: center; font-size: 11px; margin-top: 14px; }
       </style></head><body>
+      ${logoHtml}
       <h1>${resto.replace(/</g, '&lt;')}</h1>
       <div class="sub">ADDITION — Reçu client</div>
       <hr/>
@@ -696,7 +714,15 @@ export default function OrdersManager({
                           >
                             <Minus className="w-3.5 h-3.5" />
                           </button>
-                          <span className="w-6 text-center text-xs font-mono font-bold text-slate-800">{it.quantity}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={it.quantity}
+                            onChange={(e) => setQty(it.menuItemId, e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            className="w-11 text-center text-xs font-mono font-bold text-slate-800 border border-slate-200 rounded-md py-0.5 bg-white focus:ring-1 focus:ring-red-500 outline-none"
+                            title="Saisir la quantité"
+                          />
                           <button
                             type="button"
                             onClick={() => changeQty(it.menuItemId, 1)}

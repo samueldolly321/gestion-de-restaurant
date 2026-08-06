@@ -8,6 +8,10 @@ import { usePagination, Pagination } from './Pagination.tsx';
 type OrderLine = { id?: number; label: string; quantity: number; unitPrice: number; stockId: string; newStockUnit: string };
 const emptyOrderLine = (): OrderLine => ({ label: '', quantity: 1, unitPrice: 0, stockId: '', newStockUnit: 'pieces' });
 
+// Unités connues. Toute autre valeur (saisie via « Autre… ») est une unité personnalisée.
+const KNOWN_UNITS = ['kg', 'l', 'pieces', 'bouteilles'];
+const isKnownUnit = (u: string) => KNOWN_UNITS.includes(u);
+
 interface InventoryManagerProps {
   stocks: Stock[];
   suppliers: Supplier[];
@@ -191,7 +195,7 @@ export default function InventoryManager({
       itemName,
       quantity: Number(quantity) + restock,
       initialQuantity: Number(initialQuantity) + restock,
-      unit,
+      unit: unit.trim() || 'pieces', // « Autre… » laissé vide → valeur par défaut
       minStock: Number(minStock),
       supplierId: supplierId ? Number(supplierId) : null,
       invoiceImageUrl: invoiceImageUrl || null,
@@ -285,6 +289,23 @@ export default function InventoryManager({
     setIsOrderModalOpen(true);
   };
 
+  // Nouvelle commande pré-remplie depuis un article de stock en alerte (bouton « Commander »).
+  const openOrderForStock = (s: Stock) => {
+    setEditingOrder(null);
+    setOrderSupplierId(s.supplierId ? String(s.supplierId) : (suppliers[0] ? String(suppliers[0].id) : ''));
+    // Quantité suggérée pour repasser au-dessus du seuil (le seuil complet par défaut, modifiable).
+    const suggested = Math.max(1, Math.ceil((s.minStock || 1) - (s.quantity || 0) + (s.minStock || 0)));
+    setOrderLines([{ label: s.itemName, quantity: suggested, unitPrice: s.unitCost || 0, stockId: String(s.id), newStockUnit: s.unit }]);
+    setOrderDate(new Date().toISOString().split('T')[0]);
+    setOrderPaymentStatus('en_attente');
+    setOrderInvoiceNumber('');
+    setOrderInvoiceImageUrl('');
+    setOrderNote('');
+    setOrderReceived(false);
+    setActiveSubTab('orders');
+    setIsOrderModalOpen(true);
+  };
+
   const openEditOrder = (o: SupplierOrder) => {
     setEditingOrder(o);
     setOrderSupplierId(String(o.supplierId));
@@ -344,7 +365,7 @@ export default function InventoryManager({
       quantity: Number(l.quantity) || 0,
       unitPrice: Number(l.unitPrice) || 0,
       stockId: (l.stockId && l.stockId !== '__new__') ? Number(l.stockId) : null,
-      newStockUnit: l.stockId === '__new__' ? l.newStockUnit : null,
+      newStockUnit: l.stockId === '__new__' ? (l.newStockUnit.trim() || 'pieces') : null,
     }));
     const payload = {
       supplierId: Number(orderSupplierId),
@@ -401,7 +422,7 @@ export default function InventoryManager({
       supplierId: catalogSupplier.id,
       name: prodName.trim(),
       unitPrice: Number(prodPrice) || 0,
-      unit: prodUnit,
+      unit: prodUnit.trim() || 'pieces',
       stockId: (prodStockId && prodStockId !== '__new__') ? Number(prodStockId) : null,
       // Option « Autre » : crée un nouvel article de stock (unité = celle du produit) et le lie.
       newStockUnit: prodStockId === '__new__' ? prodUnit : null,
@@ -663,7 +684,16 @@ export default function InventoryManager({
                           )}
                         </td>
                         <td className="py-3.5 px-6 text-right">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end items-center gap-1">
+                            {isBelowMin && (
+                              <button
+                                onClick={() => openOrderForStock(s)}
+                                className="px-2 py-1 mr-1 bg-red-600 hover:bg-red-500 text-white rounded-lg cursor-pointer flex items-center gap-1 text-[10px] font-bold transition-colors"
+                                title="Commander cet article maintenant"
+                              >
+                                <Truck className="w-3.5 h-3.5" /> Commander
+                              </button>
+                            )}
                             <button
                               onClick={() => setHistoryStock(s)}
                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer"
@@ -1054,15 +1084,25 @@ export default function InventoryManager({
                     Unité
                   </label>
                   <select
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
+                    value={isKnownUnit(unit) ? unit : 'autre'}
+                    onChange={(e) => setUnit(e.target.value === 'autre' ? '' : e.target.value)}
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800"
                   >
                     <option value="kg">kg</option>
                     <option value="l">Litre (l)</option>
                     <option value="pieces">Pièces</option>
                     <option value="bouteilles">Bouteilles</option>
+                    <option value="autre">Autre…</option>
                   </select>
+                  {!isKnownUnit(unit) && (
+                    <input
+                      type="text"
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                      placeholder="Ex. sachet, carton, botte…"
+                      className="w-full mt-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1385,13 +1425,21 @@ export default function InventoryManager({
                         {line.stockId === '__new__' && (
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-slate-500 font-semibold">Unité :</span>
-                            <select value={line.newStockUnit} onChange={(e) => updateOrderLine(i, { newStockUnit: e.target.value })}
+                            <select value={isKnownUnit(line.newStockUnit) ? line.newStockUnit : 'autre'}
+                              onChange={(e) => updateOrderLine(i, { newStockUnit: e.target.value === 'autre' ? '' : e.target.value })}
                               className="px-2 py-1 bg-white border border-blue-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
                               <option value="pieces">Pièces</option>
                               <option value="bouteilles">Bouteilles</option>
                               <option value="kg">kg</option>
                               <option value="l">Litre (l)</option>
+                              <option value="autre">Autre…</option>
                             </select>
+                            {!isKnownUnit(line.newStockUnit) && (
+                              <input type="text" value={line.newStockUnit}
+                                onChange={(e) => updateOrderLine(i, { newStockUnit: e.target.value })}
+                                placeholder="Unité (ex. sachet)"
+                                className="px-2 py-1 bg-white border border-blue-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 outline-none w-28" />
+                            )}
                           </div>
                         )}
                         <div className="text-right text-[10px] text-slate-500 font-mono">Sous-total : <b className="text-slate-700">{formatAr(lineTotal)}</b></div>
@@ -1578,13 +1626,22 @@ export default function InventoryManager({
                     placeholder="Prix (Ar)"
                     className="sm:col-span-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 font-mono"
                   />
-                  <select value={prodUnit} onChange={(e) => setProdUnit(e.target.value)}
-                    className="px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
-                    <option value="pieces">Pièces</option>
-                    <option value="bouteilles">Bouteille</option>
-                    <option value="kg">kg</option>
-                    <option value="l">Litre</option>
-                  </select>
+                  <div className="flex flex-col gap-1">
+                    <select value={isKnownUnit(prodUnit) ? prodUnit : 'autre'}
+                      onChange={(e) => setProdUnit(e.target.value === 'autre' ? '' : e.target.value)}
+                      className="px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                      <option value="pieces">Pièces</option>
+                      <option value="bouteilles">Bouteille</option>
+                      <option value="kg">kg</option>
+                      <option value="l">Litre</option>
+                      <option value="autre">Autre…</option>
+                    </select>
+                    {!isKnownUnit(prodUnit) && (
+                      <input type="text" value={prodUnit} onChange={(e) => setProdUnit(e.target.value)}
+                        placeholder="Unité (ex. sachet)"
+                        className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500 outline-none" />
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-slate-500 font-semibold shrink-0">Stock lié (option) :</span>
