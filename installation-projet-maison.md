@@ -195,10 +195,14 @@ Attends le message **`Server running at http://0.0.0.0:3000`**, puis ouvre :
 - Si `localhost` ne répond pas, essaie **http://127.0.0.1:3000** (souci IPv6).
 
 ### Se connecter
-- **Accès test (Admin)** (bouton noir) : entre direct sans mot de passe (marche car `ENABLE_TEST_LOGIN="true"`).
-- **Créer un compte réel** : onglet « S'inscrire » (e-mail + mot de passe, enregistré dans PostgreSQL).
+- **Accès test (Admin)** (bouton noir) : entre direct sans mot de passe (marche car `ENABLE_TEST_LOGIN="true"`). ⚠️ En accès test, les onglets **Paramètres** et **Utilisateurs** sont masqués.
+- **Créer un compte réel** : onglet « S'inscrire » (e-mail + mot de passe, enregistré dans PostgreSQL). Le premier compte à créer est un **Super Admin**.
 
-**Partager les données super admin ↔ gérant** : le super admin crée son compte d'abord ; le gérant s'inscrit en rôle « Gérant » et met **l'e-mail du super admin** dans le champ prévu → les deux voient le même restaurant.
+**Ajouter le personnel (rôles)** : une fois connecté en Super Admin, va dans l'onglet **Utilisateurs** pour créer les comptes de l'équipe et choisir, pour chacun, le **rôle** (Gérant, Comptable, Chef de caisse, Serveur/euse) et les **onglets visibles**. Le **Gérant** voit tout ; **Chef de caisse** et **Serveur(e)** ne voient que Tables & Additions, Carte du Chef, Réservations, Livraisons, Clients et Calendrier (personnalisable par le Super Admin).
+
+**Identité du restaurant** : dans **Paramètres**, renseigne le **nom**, le **logo** et le **slogan** (affichés dans la barre latérale et sur les tickets imprimés).
+
+**Partager les données super admin ↔ gérant** : à l'inscription en rôle « Gérant », mettre **l'e-mail du super admin** dans le champ prévu → les deux voient le même restaurant.
 
 ---
 
@@ -258,15 +262,21 @@ git status           # voir ce qui a changé
 | `.env` | Tes secrets (base de données, `JWT_SECRET`, clé Gemini) — **à créer** |
 | `server.ts` | Le serveur (API REST + Socket.io temps réel + auth) |
 | `src/lib/auth-jwt.ts` | Signature/vérification des jetons de session |
-| `scripts/set-password.ts` | Définir/réinitialiser le mot de passe d'un compte |
+| `src/lib/permissions.ts` | Rôles + onglets visibles par rôle (partagé front/back) |
+| `src/components/UsersManager.tsx` | L'écran **Utilisateurs** (gestion des comptes) |
+| `scripts/set-password.ts` / `scripts/list-users.ts` | Définir un mot de passe / lister les comptes |
 | `src/App.tsx` | L'application React (état, onglets, dashboard) |
 | `src/components/` | Les écrans (Commandes, Menu, Stocks, Personnel, Biens & Matériel, Livraisons…) |
 | `src/db/schema.ts` | La structure de la base (les tables) |
 | `src/db/queries.ts` | Les requêtes vers la base |
-| `scripts/migrate-supplier-orders.ts` | Migration one-shot (anciennes bases uniquement) |
+| `render.yaml` / `RENDER-DEPLOY.md` | Config + guide pour **mettre l'app en ligne** (Render) |
 
 ---
 
 Bonne installation ! 🍽️ 90 % des soucis viennent du `.env` ou de PostgreSQL (base pas créée / mauvais mot de passe) — en cas de blocage, relis la section **Dépannage**.
 
 > 📖 Pour **apprendre à utiliser** l'application (tous les écrans), ouvre **`Guide-Utilisation-RestoPilote.md`** à la racine.
+>
+> 🌐 Pour **mettre l'application en ligne** (accessible depuis Internet), suis **`RENDER-DEPLOY.md`** (hébergement Render + base PostgreSQL Neon).
+>
+> 🗒️ Pour **reprendre le développement**, lis le **dernier `RECAP-AAAA-MM-JJ.md`** à la racine (état du projet + ce qui reste à faire).
