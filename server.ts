@@ -18,6 +18,7 @@ import {
   updateUserById,
   deleteUserById,
   resetFinancialData,
+  resetAllData,
   getUserById,
   updateUserConfig,
   getClients,
@@ -1042,17 +1043,21 @@ async function startServer() {
     }
   });
 
-  // API Route: Reset des données financières (super admin uniquement).
-  // Efface additions/commandes, dépenses (dont récurrentes) et rentrées de l'espace de travail.
+  // API Route: Reset des données (super admin uniquement).
+  // scope='financial' (défaut) → additions/commandes, dépenses (dont récurrentes) et rentrées.
+  // scope='all' → TOUTES les données métier de l'espace (sauf les comptes utilisateurs).
   app.post('/api/reset-financial', requireAuth, async (req: AuthRequest, res) => {
     try {
       const caller = await requireSuperAdminUser(req, res);
       if (!caller) return;
       const ownerId = caller.ownerId || caller.id;
-      const result = await resetFinancialData(ownerId);
-      res.json({ success: true, ...result });
+      const scope = (req.body?.scope === 'all') ? 'all' : 'financial';
+      const result = scope === 'all'
+        ? await resetAllData(ownerId)
+        : await resetFinancialData(ownerId);
+      res.json({ success: true, scope, ...result });
     } catch (error: any) {
-      console.error('Error resetting financial data:', error);
+      console.error('Error resetting data:', error);
       res.status(500).json({ error: error.message || 'La réinitialisation a échoué.' });
     }
   });

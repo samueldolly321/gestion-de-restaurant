@@ -1338,16 +1338,18 @@ export default function App() {
     }
   };
 
-  // Réinitialise les données financières de l'espace (super admin) puis recharge les données.
-  const handleResetFinancial = async () => {
+  // Réinitialise les données de l'espace (super admin) puis recharge les données.
+  // scope='financial' (défaut) = commandes/dépenses/rentrées ; scope='all' = toutes les données métier.
+  const handleResetFinancial = async (scope: 'financial' | 'all' = 'financial') => {
     if (!token || !dataOwnerId) return;
     const res = await fetch('/api/reset-financial', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'La réinitialisation a échoué.');
-    // On vide localement + on recharge l'espace de travail (commandes/dépenses/rentrées).
+    // On recharge l'espace de travail (toutes les collections).
     fetchWorkspaceData(token, dataOwnerId);
     return data;
   };

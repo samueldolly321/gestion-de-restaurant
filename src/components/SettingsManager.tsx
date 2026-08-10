@@ -12,7 +12,7 @@ interface SettingsManagerProps {
     restaurantAddress: string | null;
     role: string;
   }) => Promise<void>;
-  onResetFinancial?: () => Promise<any>;
+  onResetFinancial?: (scope: 'financial' | 'all') => Promise<any>;
 }
 
 const RESET_KEYWORD = 'REINITIALISER';
@@ -27,7 +27,8 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Zone de danger : réinitialisation des données financières.
+  // Zone de danger : réinitialisation des données.
+  const [resetScope, setResetScope] = useState<'financial' | 'all'>('financial'); // financier seul ou toutes les données
   const [resetText, setResetText] = useState('');
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
@@ -42,8 +43,18 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
     setResetMsg(null);
     setResetIsError(false);
     try {
-      const r = await onResetFinancial();
-      setResetMsg(`Réinitialisé : ${r?.orders || 0} additions, ${r?.expenses || 0} dépenses, ${r?.incomes || 0} rentrées et ${r?.recurringExpenses || 0} dépenses récurrentes supprimées.`);
+      const r = await onResetFinancial(resetScope);
+      if (resetScope === 'all') {
+        const total =
+          (r?.orders || 0) + (r?.reservations || 0) + (r?.clients || 0) + (r?.personnel || 0) +
+          (r?.menuItems || 0) + (r?.stocks || 0) + (r?.suppliers || 0) + (r?.supplierOrders || 0) +
+          (r?.supplierProducts || 0) + (r?.stockMovements || 0) + (r?.deliveries || 0) +
+          (r?.expenses || 0) + (r?.incomes || 0) + (r?.recurringExpenses || 0) +
+          (r?.assets || 0) + (r?.specialEvents || 0) + (r?.notifications || 0);
+        setResetMsg(`Toutes les données ont été réinitialisées : ${total} enregistrement(s) supprimé(s) (commandes, clients, personnel, carte, stocks, fournisseurs, dépenses, rentrées, biens…). Les comptes utilisateurs sont conservés.`);
+      } else {
+        setResetMsg(`Réinitialisé : ${r?.orders || 0} additions, ${r?.expenses || 0} dépenses, ${r?.incomes || 0} rentrées et ${r?.recurringExpenses || 0} dépenses récurrentes supprimées.`);
+      }
       setResetText('');
     } catch (err: any) {
       setResetIsError(true);
@@ -283,11 +294,50 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
           <h4 className="text-xs font-bold text-rose-700 uppercase tracking-widest flex items-center gap-2">
             <AlertTriangle className="w-3.5 h-3.5" /> Zone de danger
           </h4>
-          <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
-            <strong>Tout remettre à zéro (données financières).</strong> Supprime définitivement toutes les
-            <strong> additions/commandes</strong>, <strong>dépenses</strong> (y compris récurrentes) et
-            <strong> rentrées d'argent</strong> de ce restaurant. Les clients, le personnel, la carte et les stocks
-            sont <strong>conservés</strong>. Cette action est <strong>irréversible</strong>.
+
+          {/* Choix de la portée de la remise à zéro */}
+          <div className="mt-3 space-y-2">
+            <label
+              className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-colors ${
+                resetScope === 'financial' ? 'border-rose-300 bg-white' : 'border-slate-200 bg-white/50 hover:border-slate-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="resetScope"
+                checked={resetScope === 'financial'}
+                onChange={() => { setResetScope('financial'); setResetText(''); setResetMsg(null); }}
+                className="mt-0.5 accent-rose-600"
+              />
+              <span className="text-[11px] text-slate-600 leading-relaxed">
+                <strong className="text-slate-800">Données financières uniquement.</strong> Supprime les
+                <strong> additions/commandes</strong>, <strong>dépenses</strong> (y compris récurrentes) et
+                <strong> rentrées d'argent</strong>. Les clients, le personnel, la carte et les stocks sont <strong>conservés</strong>.
+              </span>
+            </label>
+
+            <label
+              className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-colors ${
+                resetScope === 'all' ? 'border-rose-400 bg-rose-50' : 'border-slate-200 bg-white/50 hover:border-slate-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="resetScope"
+                checked={resetScope === 'all'}
+                onChange={() => { setResetScope('all'); setResetText(''); setResetMsg(null); }}
+                className="mt-0.5 accent-rose-600"
+              />
+              <span className="text-[11px] text-slate-600 leading-relaxed">
+                <strong className="text-rose-700">Toutes les données stockées.</strong> Supprime <strong>tout</strong> :
+                commandes, clients, personnel, carte, stocks, fournisseurs, livraisons, dépenses, rentrées, biens &amp;
+                matériel, événements… Seuls les <strong>comptes utilisateurs</strong> (connexions) sont conservés.
+              </span>
+            </label>
+          </div>
+
+          <p className="text-[11px] text-rose-600 mt-3 font-semibold">
+            ⚠️ Cette action est <strong>irréversible</strong>.
           </p>
 
           {resetMsg && (
@@ -314,7 +364,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
               className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               {resetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              Tout remettre à zéro
+              {resetScope === 'all' ? 'Tout supprimer' : 'Remettre à zéro'}
             </button>
           </div>
         </div>

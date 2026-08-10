@@ -206,6 +206,65 @@ export async function resetFinancialData(ownerId: number) {
   }
 }
 
+// Réinitialise TOUTES les données métier d'un espace de travail (sauf les comptes utilisateurs).
+// Ordre de suppression : enfants → parents (les FK sont en cascade / set null, mais on reste explicite).
+export async function resetAllData(ownerId: number) {
+  try {
+    const del = async (table: any) =>
+      (await db.delete(table).where(eq(table.userId, ownerId)).returning({ id: table.id })).length;
+
+    // Commandes fournisseurs et catalogue (référencent stocks/fournisseurs)
+    const supplierOrderItemsCount = await del(supplierOrderItems);
+    const supplierOrdersCount = await del(supplierOrders);
+    const supplierProductsCount = await del(supplierProducts);
+    // Stocks et mouvements
+    const stockMovementsCount = await del(stockMovements);
+    // Livraisons (référencent commandes/véhicules) avant les commandes
+    const deliveriesCount = await del(deliveries);
+    // Commandes (cascade → order_items) et réservations
+    const ordersCount = await del(orders);
+    const reservationsCount = await del(reservations);
+    // Finances
+    const incomesCount = await del(incomes);
+    const expensesCount = await del(expenses);
+    const recurringCount = await del(recurringExpenses);
+    // Stocks, fournisseurs
+    const stocksCount = await del(stocks);
+    const suppliersCount = await del(suppliers);
+    // Carte, personnel, clients
+    const menuItemsCount = await del(menuItems);
+    const personnelCount = await del(personnel);
+    const clientsCount = await del(clients);
+    // Divers
+    const notificationsCount = await del(notifications);
+    const specialEventsCount = await del(specialEvents);
+    const assetsCount = await del(assets);
+
+    return {
+      orders: ordersCount,
+      reservations: reservationsCount,
+      clients: clientsCount,
+      personnel: personnelCount,
+      menuItems: menuItemsCount,
+      stocks: stocksCount,
+      suppliers: suppliersCount,
+      supplierOrders: supplierOrdersCount,
+      supplierOrderItems: supplierOrderItemsCount,
+      supplierProducts: supplierProductsCount,
+      stockMovements: stockMovementsCount,
+      deliveries: deliveriesCount,
+      expenses: expensesCount,
+      incomes: incomesCount,
+      recurringExpenses: recurringCount,
+      assets: assetsCount,
+      specialEvents: specialEventsCount,
+      notifications: notificationsCount,
+    };
+  } catch (error) {
+    handleDbError("Failed to reset all data", error);
+  }
+}
+
 // Définit / réinitialise le mot de passe (haché) d'un utilisateur existant, par e-mail.
 export async function setUserPasswordByEmail(email: string, passwordHash: string) {
   try {
