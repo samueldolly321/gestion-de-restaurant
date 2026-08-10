@@ -146,8 +146,29 @@ function createWindow() {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
-  // Ouvre les liens externes dans le navigateur système, pas dans l'app.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  // Gestion des window.open() :
+  //  - Fenêtre d'impression de l'addition : window.open('', '_blank', ...) → url vide/about:blank.
+  //    On l'AUTORISE à s'ouvrir dans Electron (sinon Windows cherche une app → dialogue Microsoft Store).
+  //  - Pages locales de l'app (http://127.0.0.1:PORT/…) : idem, on ouvre dans une fenêtre interne.
+  //  - Vrais liens externes (http/https vers un autre hôte) : navigateur système.
+  const localOrigin = `http://127.0.0.1:${PORT}`;
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    const isBlank = !url || url === 'about:blank';
+    const isLocal = url.startsWith(localOrigin) || url.startsWith('http://localhost:' + PORT);
+    if (isBlank || isLocal) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 380,
+          height: 640,
+          autoHideMenuBar: true,
+          webPreferences: { contextIsolation: true, nodeIntegration: false },
+        },
+      };
+    }
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
