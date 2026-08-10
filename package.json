@@ -16,6 +16,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts",
+    "db:generate": "drizzle-kit generate --config=src/db/drizzle.config.ts",
     "desktop": "npm run build && electron .",
     "desktop:build": "npm run build && electron-builder --win"
   },
@@ -23,8 +24,18 @@
     "appId": "mg.restopilote.desktop",
     "productName": "RestoPilote",
     "asar": false,
+    "npmRebuild": false,
     "directories": {
       "output": "release"
+    },
+    "files": [
+      "**/*",
+      "!**/*.map",
+      "!RECAP-*.md",
+      "!note"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
     },
     "win": {
       "target": [
@@ -48,6 +59,7 @@
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
+    "embedded-postgres": "^18.4.0-beta.17",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",

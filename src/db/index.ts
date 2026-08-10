@@ -22,6 +22,8 @@ export const createPool = () => {
   const user = process.env.SQL_USER;
   const password = process.env.SQL_PASSWORD;
   const database = process.env.SQL_DB_NAME;
+  // Port optionnel : l'app desktop (Postgres embarqué) écoute sur un port dédié (ex. 54329).
+  const port = process.env.SQL_PORT ? Number(process.env.SQL_PORT) : undefined;
 
   if (!host || !user || !password || !database) {
     console.warn("Database credentials missing in environment variables. Connection may fail.");
@@ -29,6 +31,7 @@ export const createPool = () => {
 
   return new Pool({
     host,
+    port,
     user,
     password,
     database,

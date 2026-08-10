@@ -98,6 +98,24 @@ async function startServer() {
   const app = express();
   // Render (et la plupart des hébergeurs) fournit le port via la variable d'environnement PORT.
   const PORT = Number(process.env.PORT) || 3000;
+
+  // Application desktop (Postgres embarqué) : on applique les migrations Drizzle au démarrage
+  // pour créer/mettre à jour toutes les tables automatiquement. Gardé derrière RUN_MIGRATIONS
+  // pour ne PAS changer le comportement du serveur web (Render/Neon, dev local via db:push).
+  if (process.env.RUN_MIGRATIONS === 'true') {
+    try {
+      const { db } = await import('./src/db/index.ts');
+      const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+      const migrationsFolder = process.env.MIGRATIONS_DIR || path.join(process.cwd(), 'drizzle');
+      console.log(`[migrations] Application des migrations depuis ${migrationsFolder} …`);
+      await migrate(db, { migrationsFolder });
+      console.log('[migrations] Base à jour.');
+    } catch (err) {
+      console.error('[migrations] Échec de la migration :', err);
+      throw err;
+    }
+  }
+
   const httpServer = createHttpServer(app);
   
   // Set up Socket.io server

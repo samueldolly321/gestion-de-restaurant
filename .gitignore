@@ -11,6 +11,7 @@ coverage/
 firebase-applet-config.json
 !firebase-applet-config.example.json
 chefsuite
+note
 
 # Sortie de compilation serveur
 server.js
