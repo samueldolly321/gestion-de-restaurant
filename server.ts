@@ -21,8 +21,6 @@ import {
   resetAllData,
   getUserById,
   updateUserConfig,
-  getAppSettings,
-  upsertAppSettings,
   getClients,
   createClient,
   updateClient,
@@ -146,41 +144,6 @@ async function startServer() {
   // API Route: Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date() });
-  });
-
-  // Contact support affiché sur la page de connexion (valeurs par défaut si non configuré).
-  const DEFAULT_SUPPORT_PHONE = '+261 34 56 789 10';
-  const DEFAULT_SUPPORT_EMAIL = 'support@chefsuite.mg';
-
-  // API Route: Réglages PUBLICS (accessible sans authentification — utilisé par l'écran de connexion).
-  app.get('/api/public-settings', async (req, res) => {
-    try {
-      const s = await getAppSettings();
-      res.json({
-        supportPhone: s?.supportPhone || DEFAULT_SUPPORT_PHONE,
-        supportEmail: s?.supportEmail || DEFAULT_SUPPORT_EMAIL,
-      });
-    } catch (error) {
-      // En cas de souci DB, on renvoie les valeurs par défaut plutôt que d'échouer.
-      res.json({ supportPhone: DEFAULT_SUPPORT_PHONE, supportEmail: DEFAULT_SUPPORT_EMAIL });
-    }
-  });
-
-  // API Route: Mise à jour des réglages globaux (super admin uniquement).
-  app.put('/api/app-settings', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const caller = await requireSuperAdminUser(req, res);
-      if (!caller) return;
-      const { supportPhone, supportEmail } = req.body || {};
-      const saved = await upsertAppSettings({
-        supportPhone: supportPhone != null ? String(supportPhone).trim() : null,
-        supportEmail: supportEmail != null ? String(supportEmail).trim() : null,
-      });
-      res.json({ success: true, supportPhone: saved?.supportPhone, supportEmail: saved?.supportEmail });
-    } catch (error: any) {
-      console.error('Error updating app settings:', error);
-      res.status(500).json({ error: error.message || 'La mise à jour a échoué.' });
-    }
   });
 
   // Enrichit l'utilisateur avec dataOwnerId (propriétaire effectif des données).

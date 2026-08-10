@@ -79,9 +79,6 @@ export default function App() {
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [selectedRole, setSelectedRole] = useState<'super_admin' | 'gerant'>('super_admin');
   const [loginSubView, setLoginSubView] = useState<'login' | 'contact' | 'privacy'>('login');
-  // Contact support (page de connexion) — réglage global modifiable par le super admin dans Paramètres.
-  const [supportPhone, setSupportPhone] = useState('+261 34 56 789 10');
-  const [supportEmail, setSupportEmail] = useState('support@chefsuite.mg');
 
   // App active view
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -144,32 +141,6 @@ export default function App() {
       setIsAuthLoading(false);
     });
   }, []);
-
-  // Charge le contact support (public, avant connexion) pour la page « Contact & Support ».
-  useEffect(() => {
-    fetch('/api/public-settings')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.supportPhone) setSupportPhone(data.supportPhone);
-        if (data?.supportEmail) setSupportEmail(data.supportEmail);
-      })
-      .catch(() => { /* garde les valeurs par défaut */ });
-  }, []);
-
-  // Enregistre le contact support (super admin) puis met à jour l'affichage.
-  const handleUpdateSupport = async (phone: string, email: string) => {
-    if (!token) return;
-    const res = await fetch('/api/app-settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ supportPhone: phone, supportEmail: email }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'La mise à jour a échoué.');
-    setSupportPhone(data.supportPhone || phone);
-    setSupportEmail(data.supportEmail || email);
-    return data;
-  };
 
   // Onglets accessibles par l'utilisateur courant (envoyés par le serveur ; 'users' = super admin uniquement).
   const isSuperAdmin = dbUser?.role === 'super_admin';
@@ -1580,7 +1551,7 @@ export default function App() {
                     <Phone className="w-4 h-4" />
                     <span className="text-[10px] font-bold uppercase tracking-wider">Téléphone Support</span>
                   </div>
-                  <p className="text-sm font-black text-slate-800 font-mono">{supportPhone}</p>
+                  <p className="text-sm font-black text-slate-800 font-mono">+261 34 21 890 51</p>
                   <p className="text-[9px] text-slate-400">Appel direct &amp; WhatsApp</p>
                 </div>
 
@@ -1589,7 +1560,7 @@ export default function App() {
                     <Mail className="w-4 h-4" />
                     <span className="text-[10px] font-bold uppercase tracking-wider">Adresse E-mail</span>
                   </div>
-                  <p className="text-sm font-black text-slate-800 font-mono">{supportEmail}</p>
+                  <p className="text-xs font-black text-slate-800 font-mono break-all">hariniainasamuelandrianirina@gmail.com</p>
                   <p className="text-[9px] text-slate-400">Réponse sous 2 heures max</p>
                 </div>
               </div>
@@ -2642,9 +2613,6 @@ export default function App() {
                     dbUser={dbUser}
                     onUpdateConfig={handleUpdateConfig}
                     onResetFinancial={handleResetFinancial}
-                    supportPhone={supportPhone}
-                    supportEmail={supportEmail}
-                    onUpdateSupport={handleUpdateSupport}
                   />
                 )}
               </motion.div>

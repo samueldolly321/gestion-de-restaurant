@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, Mail, MapPin, AlertTriangle, Trash2, LifeBuoy } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2 } from 'lucide-react';
 import { DbUser } from '../types.ts';
 
 interface SettingsManagerProps {
@@ -13,15 +13,11 @@ interface SettingsManagerProps {
     role: string;
   }) => Promise<void>;
   onResetFinancial?: (scope: 'financial' | 'all') => Promise<any>;
-  // Contact support affiché sur la page de connexion (réglage global, super admin).
-  supportPhone?: string;
-  supportEmail?: string;
-  onUpdateSupport?: (phone: string, email: string) => Promise<any>;
 }
 
 const RESET_KEYWORD = 'REINITIALISER';
 
-export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinancial, supportPhone, supportEmail, onUpdateSupport }: SettingsManagerProps) {
+export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinancial }: SettingsManagerProps) {
   const [restaurantName, setRestaurantName] = useState(dbUser.restaurantName || 'RestoPilote');
   const [restaurantSlogan, setRestaurantSlogan] = useState(dbUser.restaurantSlogan || '');
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState(dbUser.restaurantLogoUrl || '');
@@ -30,30 +26,6 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [role, setRole] = useState(dbUser.role || 'super_admin');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  // Contact support (page de connexion) — réglage global édité par le super admin.
-  const [sPhone, setSPhone] = useState(supportPhone || '');
-  const [sEmail, setSEmail] = useState(supportEmail || '');
-  const [savingSupport, setSavingSupport] = useState(false);
-  const [supportSaved, setSupportSaved] = useState(false);
-  // Synchronise les champs quand les valeurs (chargées en asynchrone) arrivent.
-  useEffect(() => { if (supportPhone !== undefined) setSPhone(supportPhone); }, [supportPhone]);
-  useEffect(() => { if (supportEmail !== undefined) setSEmail(supportEmail); }, [supportEmail]);
-
-  const doSaveSupport = async () => {
-    if (!onUpdateSupport) return;
-    setSavingSupport(true);
-    setSupportSaved(false);
-    try {
-      await onUpdateSupport(sPhone.trim(), sEmail.trim());
-      setSupportSaved(true);
-      setTimeout(() => setSupportSaved(false), 3000);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSavingSupport(false);
-    }
-  };
 
   // Zone de danger : réinitialisation des données.
   const [resetScope, setResetScope] = useState<'financial' | 'all'>('financial'); // financier seul ou toutes les données
@@ -315,62 +287,6 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
           </div>
         )}
       </form>
-
-      {/* Contact & Support — valeurs affichées sur la page de connexion (super admin uniquement) */}
-      {canEdit && onUpdateSupport && (
-        <div className="mx-6 mb-6 p-5 border border-slate-200 bg-slate-50/40 rounded-2xl">
-          <h4 className="text-xs font-bold text-red-600 uppercase tracking-widest flex items-center gap-2">
-            <LifeBuoy className="w-3.5 h-3.5" /> Contact &amp; Support (page de connexion)
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-            Ces coordonnées s'affichent sur la page <strong>« Contact &amp; Support »</strong> de l'écran de connexion (visible avant de se connecter).
-          </p>
-
-          {supportSaved && (
-            <div className="mt-3 p-2.5 rounded-xl text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-2">
-              <Check className="w-3.5 h-3.5" /> Coordonnées de support enregistrées.
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                <Phone className="w-3 h-3" /> Téléphone support
-              </label>
-              <input
-                type="text"
-                value={sPhone}
-                onChange={(e) => setSPhone(e.target.value)}
-                placeholder="+261 34 56 789 10"
-                className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                <Mail className="w-3 h-3" /> E-mail support
-              </label>
-              <input
-                type="email"
-                value={sEmail}
-                onChange={(e) => setSEmail(e.target.value)}
-                placeholder="support@restaurant.mg"
-                className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none text-slate-800"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end mt-4">
-            <button
-              type="button"
-              onClick={doSaveSupport}
-              disabled={savingSupport}
-              className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
-            >
-              {savingSupport ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Enregistrement...</> : 'Enregistrer le contact support'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Zone de danger — réinitialisation des données financières (super admin uniquement) */}
       {canEdit && onResetFinancial && (
