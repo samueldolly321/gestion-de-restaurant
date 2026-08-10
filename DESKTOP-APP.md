@@ -29,6 +29,13 @@ npm run desktop:build  # construit le front + le serveur, puis génère l'instal
 - Résultat dans le dossier **`release/`** : un installateur **`RestoPilote Setup x.x.x.exe`**.
 - La 1re fois, `electron-builder` télécharge l'exécutable Electron (Internet requis **uniquement au build**, pas à l'usage).
 
+> ⚠️ **Si le build échoue avec `EPERM … rename 'release\win-unpacked.tmp'`** (verrou Windows Defender / « Accès contrôlé aux dossiers » sur `D:\perso`) : soit tu ajoutes une **exclusion Defender** sur le dossier du projet (fix permanent), soit tu génères l'installateur **hors du dossier protégé** (contournement fiable) :
+> ```powershell
+> npm run build
+> npx electron-builder --win -c.directories.output="$env:LOCALAPPDATA\Temp\restopilote-release"
+> ```
+> L'installateur sort alors dans `%LOCALAPPDATA%\Temp\restopilote-release\`.
+
 Puis **copie ce `.exe`** sur une clé USB → installe-le sur le poste hors-ligne (double-clic → suivant → terminer). Un raccourci **RestoPilote** est créé sur le bureau.
 
 ### Tester l'appli desktop en local (sans générer l'installateur)

@@ -8,6 +8,11 @@ const fs = require('fs');
 const http = require('http');
 const { fork } = require('child_process');
 
+// Nom stable de l'application : détermine le dossier de données utilisateur
+// (%APPDATA%/RestoPilote). Sans ça, Electron retombe sur le "name" du package.json
+// ("react-example"). Appelé avant tout app.getPath('userData').
+app.setName('RestoPilote');
+
 // Port du serveur web local (différent de 3000 pour ne pas gêner un `npm run dev` éventuel).
 const PORT = Number(process.env.DESKTOP_PORT) || 34517;
 // Port du PostgreSQL embarqué (≠ 5432 pour ne pas entrer en conflit avec un Postgres système).

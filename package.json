@@ -30,9 +30,13 @@
     },
     "files": [
       "**/*",
+      "!release/**",
       "!**/*.map",
-      "!RECAP-*.md",
-      "!note"
+      "!src/**",
+      "!image/**",
+      "!*.md",
+      "!note",
+      "!.env*"
     ],
     "extraMetadata": {
       "main": "electron/main.cjs"
@@ -57,7 +61,6 @@
     "@vitejs/plugin-react": "^5.0.4",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
-    "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "embedded-postgres": "^18.4.0-beta.17",
     "express": "^4.21.2",
@@ -78,6 +81,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "drizzle-kit": "^0.31.10",
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
