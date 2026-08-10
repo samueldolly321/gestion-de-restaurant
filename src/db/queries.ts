@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { db } from './index.ts';
-import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets } from './schema.ts';
+import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets, appSettings } from './schema.ts';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 
 // Helper to sanitize database errors and log them securely
@@ -262,6 +262,34 @@ export async function resetAllData(ownerId: number) {
     };
   } catch (error) {
     handleDbError("Failed to reset all data", error);
+  }
+}
+
+// --- APP SETTINGS (réglages globaux, une seule ligne id=1) ---
+
+export async function getAppSettings() {
+  try {
+    const rows = await db.select().from(appSettings).where(eq(appSettings.id, 1)).limit(1);
+    return rows[0] || null;
+  } catch (error) {
+    handleDbError("Failed to fetch app settings", error);
+  }
+}
+
+export async function upsertAppSettings(values: { supportPhone?: string | null; supportEmail?: string | null }) {
+  try {
+    const existing = await db.select().from(appSettings).where(eq(appSettings.id, 1)).limit(1);
+    if (existing[0]) {
+      const res = await db.update(appSettings)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(appSettings.id, 1))
+        .returning();
+      return res[0];
+    }
+    const res = await db.insert(appSettings).values({ id: 1, ...values }).returning();
+    return res[0];
+  } catch (error) {
+    handleDbError("Failed to update app settings", error);
   }
 }
 

@@ -347,6 +347,15 @@ export const incomes = pgTable('incomes', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Define the 'app_settings' table (réglages GLOBAUX de l'application — une seule ligne, id=1).
+// Ex. le contact support affiché sur la page de connexion (publique, avant authentification).
+export const appSettings = pgTable('app_settings', {
+  id: integer('id').primaryKey(), // toujours 1 (réglage global unique)
+  supportPhone: text('support_phone'), // téléphone affiché sur « Contact & Support »
+  supportEmail: text('support_email'), // e-mail affiché sur « Contact & Support »
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // --- Relationships ---
 
 export const usersRelations = relations(users, ({ many }) => ({
