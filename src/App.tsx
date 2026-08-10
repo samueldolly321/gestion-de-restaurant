@@ -73,6 +73,7 @@ export default function App() {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authOwnerEmail, setAuthOwnerEmail] = useState(''); // e-mail du super admin à rejoindre (gérant)
+  const [authValidationEmail, setAuthValidationEmail] = useState(''); // e-mail d'autorisation pour créer un Super Admin
   const [authPassword, setAuthPassword] = useState('');
   const [showAuthPassword, setShowAuthPassword] = useState(false); // oeil afficher/masquer le mot de passe
   const [authDisplayName, setAuthDisplayName] = useState('');
@@ -490,6 +491,8 @@ export default function App() {
       setIsAuthLoading(true);
       // Un gérant rejoint le restaurant du super admin via son e-mail.
       const ownerEmail = selectedRole === 'gerant' ? (authOwnerEmail.trim() || undefined) : undefined;
+      // Créer un Super Admin exige un e-mail d'autorisation (vérifié aussi côté serveur).
+      const validationEmail = selectedRole === 'super_admin' ? authValidationEmail.trim() : undefined;
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -499,6 +502,7 @@ export default function App() {
           displayName: authDisplayName.trim() || undefined,
           role: selectedRole,
           ownerEmail,
+          validationEmail,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1876,6 +1880,25 @@ export default function App() {
                             </span>
                           </button>
                         </div>
+                      </div>
+                    )}
+
+                    {isRegisterMode && selectedRole === 'super_admin' && (
+                      <div className="text-left">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          E-mail de validation *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={authValidationEmail}
+                          onChange={(e) => setAuthValidationEmail(e.target.value)}
+                          placeholder="e-mail d'autorisation"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800"
+                        />
+                        <p className="text-[9px] text-slate-400 mt-1 leading-normal">
+                          La création d'un compte Super Admin est réservée : saisissez l'e-mail d'autorisation fourni par l'administrateur.
+                        </p>
                       </div>
                     )}
 

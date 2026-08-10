@@ -170,12 +170,28 @@ async function startServer() {
   // API Route: Register (création de compte avec e-mail + mot de passe, stocké dans PostgreSQL)
   app.post('/api/auth/register', async (req, res) => {
     try {
-      const { email, password, displayName, role, ownerEmail } = req.body || {};
+      const { email, password, displayName, role, ownerEmail, validationEmail } = req.body || {};
       if (!email || !password) {
         return res.status(400).json({ error: 'E-mail et mot de passe requis.' });
       }
       if (String(password).length < 6) {
         return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+      }
+
+      // Sécurité : la création d'un Super Admin est réservée. L'utilisateur doit saisir
+      // l'e-mail d'autorisation (configurable via SUPER_ADMIN_VALIDATION_EMAIL sur le serveur).
+      // Rôle absent = super_admin (valeur par défaut du schéma), donc protégé aussi.
+      const effectiveRole = role || 'super_admin';
+      if (effectiveRole === 'super_admin') {
+        const authorizedEmail = (process.env.SUPER_ADMIN_VALIDATION_EMAIL || 'hariniainasamuelandrianirina@gmail.com')
+          .trim()
+          .toLowerCase();
+        const provided = String(validationEmail || '').trim().toLowerCase();
+        if (provided !== authorizedEmail) {
+          return res.status(403).json({
+            error: "Inscription Super Admin non autorisée : e-mail de validation incorrect.",
+          });
+        }
       }
 
       const normalizedEmail = String(email).trim().toLowerCase();
