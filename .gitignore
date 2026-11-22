@@ -22,3 +22,7 @@ image/
 
 # Sortie du build desktop (installateur Electron)
 release/
+
+# Fichiers locaux sensibles / volumineux (jamais sur GitHub)
+mot-de-passe
+fichier exe application/
