@@ -31,7 +31,7 @@ export default function MenuPicker({ menuItems, quantities, onAdd, onRemoveOne, 
   }, [available, categories, category, search]);
 
   return (
-    <div className="flex flex-col min-h-0">
+    <div className="flex flex-col min-h-0 lg:flex-1">
       {/* Recherche */}
       <div className="relative">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -44,7 +44,7 @@ export default function MenuPicker({ menuItems, quantities, onAdd, onRemoveOne, 
       </div>
 
       {/* Filtres par catégorie */}
-      <div className="flex gap-1.5 overflow-x-auto py-3 shrink-0">
+      <div className="flex flex-wrap gap-1.5 py-3 shrink-0">
         {['all', ...categories].map((c) => (
           <button
             key={c}
@@ -69,7 +69,9 @@ export default function MenuPicker({ menuItems, quantities, onAdd, onRemoveOne, 
           Aucun résultat pour cette recherche.
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-1 lg:max-h-[62vh]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 auto-rows-max gap-3 content-start lg:flex-1 lg:min-h-0 lg:overflow-y-auto pr-1 pb-1">
+          {/* auto-rows-max : chaque ligne garde la hauteur de sa vignette (sinon la grille, limitée en hauteur, les écrase) */}
+
           {shown.map((m) => {
             const qty = quantities[m.id] || 0;
             return (

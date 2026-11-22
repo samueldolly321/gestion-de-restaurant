@@ -547,24 +547,29 @@ export default function OrdersManager({
       {/* Add / Edit modal - Wider Width (max-w-xl md:max-w-2xl) */}
       {isOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl lg:max-w-6xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative text-left max-h-[92vh] overflow-y-auto">
-            <button
-              onClick={() => setIsOpen(false)}
-              className="sticky top-0 float-right -mt-2 -mr-2 p-1.5 bg-white/90 backdrop-blur text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
+          {/* Petit écran : toute la fenêtre défile. Grand écran (lg) : hauteur fixe, en-tête fixe,
+              et CHAQUE colonne défile indépendamment (carte à gauche, addition à droite). */}
+          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl lg:max-w-6xl w-full shadow-2xl border border-slate-100 relative text-left max-h-[92vh] overflow-y-auto lg:h-[92vh] lg:overflow-hidden lg:flex lg:flex-col">
+            <div className="px-6 sm:px-8 pt-6 sm:pt-7 pb-4 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
+              <div>
+                <h3 className="font-display font-black text-slate-800 text-base sm:text-lg mb-1 flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-red-600" />
+                  {editingOrder ? 'Modifier la Commande' : 'Ouvrir un Service Table'}
+                </h3>
+                <p className="text-[10px] text-slate-400">Cliquez sur les plats et boissons de la carte pour les ajouter à l'addition.</p>
+              </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            <h3 className="font-display font-black text-slate-800 text-base sm:text-lg mb-1.5 flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5 text-red-600" />
-              {editingOrder ? 'Modifier la Commande' : 'Ouvrir un Service Table'}
-            </h3>
-            <p className="text-[10px] text-slate-400 mb-6">Cliquez sur les plats et boissons de la carte pour les ajouter à l'addition.</p>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:flex-1 lg:min-h-0">
             {/* Gauche : la carte en images (clic = ajout à l'addition) */}
-            <div className="lg:border-r lg:border-slate-100 lg:pr-8">
-              <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <div className="px-6 sm:px-8 pt-5 pb-2 lg:pb-6 lg:border-r lg:border-slate-100 lg:flex lg:flex-col lg:min-h-0">
+              <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
                 <UtensilsCrossed className="w-3.5 h-3.5 text-red-600" /> La carte
               </h4>
               <MenuPicker
@@ -576,8 +581,8 @@ export default function OrdersManager({
               />
             </div>
 
-            {/* Droite : informations de la table + addition */}
-            <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Droite : informations de la table + addition (défile seule ; boutons collés en bas) */}
+            <form onSubmit={handleSubmit} className="px-6 sm:px-8 pt-5 space-y-5 lg:min-h-0 lg:overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Numéro de Table *</label>
@@ -679,7 +684,7 @@ export default function OrdersManager({
                 <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Addition de la table</label>
 
                 {/* Lignes de commande */}
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-2">
                   {items.length === 0 ? (
                     <div className="text-center py-6 text-slate-300 border border-dashed border-slate-200 rounded-xl">
                       <UtensilsCrossed className="w-5 h-5 mx-auto mb-1 opacity-60" />
@@ -833,7 +838,7 @@ export default function OrdersManager({
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+              <div className="sticky bottom-0 -mx-6 sm:-mx-8 px-6 sm:px-8 py-4 bg-white/95 backdrop-blur flex justify-end gap-2.5 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
