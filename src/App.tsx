@@ -560,28 +560,6 @@ export default function App() {
     }
   };
 
-  // Test/Demo login: accès admin local sans mot de passe (gated par ENABLE_TEST_LOGIN côté serveur)
-  const handleTestLogin = async () => {
-    try {
-      setErrorMsg(null);
-      setIsAuthLoading(true);
-      const res = await fetch('/api/auth/test-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Le login de test est indisponible.");
-      }
-      const { token: testToken, user } = await res.json();
-      startSession(testToken, user);
-    } catch (err: any) {
-      console.error('Test login failed:', err);
-      setErrorMsg(err.message || 'Le login de test a échoué.');
-      setIsAuthLoading(false);
-    }
-  };
-
   // Déconnexion : on efface la session locale (plus de Firebase).
   const handleLogout = async () => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -1546,7 +1524,8 @@ export default function App() {
   // ONBOARDING SCREEN (Signed Out) - Crafted in spectacular Red and Yellow brand accents!
   if (!dbUser) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between relative overflow-hidden font-sans">
+      <div className="h-screen bg-slate-50 text-slate-800 flex flex-col relative overflow-hidden font-sans">
+        {/* Page de connexion : exactement la hauteur de l'écran (100vh) ; seul le contenu central défile si besoin */}
         {/* Image de fond + voile transparent (remplaçable : public/login-bg.jpg) */}
         <div
           className="absolute inset-0 bg-cover bg-center pointer-events-none"
@@ -1559,7 +1538,7 @@ export default function App() {
         <div className="absolute top-0 left-0 right-0 h-[1px] bg-slate-200/50" />
 
         {/* Top Header Navigation */}
-        <header className="px-6 lg:px-12 py-5 flex items-center justify-between z-10">
+        <header className="px-6 lg:px-12 py-4 flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-2">
             <div className="p-2.5 bg-red-600 rounded-xl shadow-md shadow-red-600/20">
               <Utensils className="w-5 h-5 text-white" />
@@ -1576,7 +1555,8 @@ export default function App() {
         </header>
 
         {/* Main Hero Card Body */}
-        <main className="flex-1 flex flex-col items-center justify-center max-w-5xl mx-auto px-6 z-10 py-12">
+        <main className="flex-1 min-h-0 overflow-y-auto z-10 w-full">
+        <div className="min-h-full flex flex-col items-center justify-center max-w-5xl mx-auto px-6 py-6">
           {isAuthLoading ? (
             <div className="flex flex-col items-center gap-3">
               <div className="relative flex items-center justify-center">
@@ -1941,31 +1921,15 @@ export default function App() {
                       {isRegisterMode ? "Créer mon compte" : "Se connecter"}
                     </button>
                   </form>
-
-                  {/* Divider */}
-                  <div className="relative flex items-center py-1">
-                    <div className="flex-grow border-t border-slate-100"></div>
-                    <span className="flex-shrink mx-3 text-[9px] text-slate-400 uppercase tracking-wider font-mono">OU</span>
-                    <div className="flex-grow border-t border-slate-100"></div>
-                  </div>
-
-                  {/* Accès test / démo — entrer dans l'admin sans mot de passe (local uniquement) */}
-                  <button
-                    type="button"
-                    onClick={handleTestLogin}
-                    className="w-full py-2 mt-1 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Accès test (Admin) — sans mot de passe
-                  </button>
                 </div>
               </div>
             </div>
           )}
+        </div>
         </main>
 
         {/* Footer */}
-        <footer className="py-6 border-t border-slate-100 px-6 z-10 bg-white">
+        <footer className="py-4 border-t border-slate-100 px-6 z-10 bg-white shrink-0">
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-[11px] text-slate-400 font-semibold">
               © 2026 RestoPilote • Madagascar.

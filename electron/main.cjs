@@ -139,8 +139,9 @@ function startServer(appRoot) {
     EMBEDDED_PG: 'true',
     // Secret de session stable (à personnaliser via .env pour la prod).
     JWT_SECRET: process.env.JWT_SECRET || 'restopilote-desktop-secret-a-changer',
-    // Accès test pratique en desktop local ; mettre "false" dans un .env pour l'exiger.
-    ENABLE_TEST_LOGIN: process.env.ENABLE_TEST_LOGIN || 'true',
+    // Accès test (admin sans mot de passe) DÉSACTIVÉ : le bouton n'existe plus sur la page de connexion.
+    // Ne le réactiver ("true" dans un .env à côté de l'exe) que pour un dépannage ponctuel.
+    ENABLE_TEST_LOGIN: process.env.ENABLE_TEST_LOGIN || 'false',
   };
 
   serverProcess = fork(serverPath, [], { env, cwd: appRoot, silent: false });
