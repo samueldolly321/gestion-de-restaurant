@@ -17,6 +17,17 @@ const WINDOW_ICON = path.join(__dirname, 'app-icon.png');
 // ("react-example"). Appelé avant tout app.getPath('userData').
 app.setName('RestoPilote');
 
+// Une seule instance à la fois : un 2e double-clic remet simplement la fenêtre existante au premier plan
+// (deux instances se disputeraient le même PostgreSQL embarqué → « démarrage impossible »).
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+} else {
+  app.on('second-instance', () => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
+  });
+}
+
 // Port du serveur web local (différent de 3000 pour ne pas gêner un `npm run dev` éventuel).
 const PORT = Number(process.env.DESKTOP_PORT) || 34517;
 // Port du PostgreSQL embarqué (≠ 5432 pour ne pas entrer en conflit avec un Postgres système).
@@ -48,6 +59,28 @@ function loadUserEnv() {
       }
     }
   } catch (_) { /* dotenv absent en dev : ignore */ }
+}
+
+// Arrête un PostgreSQL embarqué ORPHELIN laissé par une session précédente (app fermée de force,
+// plantage, arrêt brutal du PC) : il garde le port 54329 et empêche tout redémarrage.
+// Ne vise QUE les postgres.exe / pg_ctl.exe situés dans le dossier de CETTE application
+// (jamais un PostgreSQL système ou de développement).
+function killOrphanPostgres(appRoot) {
+  if (process.platform !== 'win32') return;
+  const { execFileSync } = require('child_process');
+  const variants = [appRoot, appRoot.replace(/\\/g, '/')].map((s) => s.replace(/'/g, "''"));
+  const script =
+    "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe' OR Name='pg_ctl.exe'\" | " +
+    'Where-Object { $c = [string]$_.CommandLine; $e = [string]$_.ExecutablePath; ' +
+    variants.map((v) => `$c -like '*${v}*' -or $e -like '${v}*'`).join(' -or ') +
+    ' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }';
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 }).trim();
+    if (out) console.log('[pg] PostgreSQL orphelin arrêté (PID ' + out.split(/\s+/).join(', ') + ').');
+  } catch (err) {
+    console.error('[pg] Nettoyage des orphelins impossible :', err.message);
+  }
 }
 
 // Démarre le PostgreSQL portable embarqué. Les données sont stockées dans le dossier
@@ -277,6 +310,8 @@ app.whenReady().then(async () => {
   }
 
   // 1) PostgreSQL embarqué (aucune installation requise).
+  //    D'abord : on libère le port si un ancien PostgreSQL de RestoPilote est resté bloqué.
+  killOrphanPostgres(appRoot);
   try {
     await startEmbeddedPostgres();
   } catch (err) {
