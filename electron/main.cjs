@@ -181,7 +181,12 @@ function createWindow() {
     icon: WINDOW_ICON,
     backgroundColor: '#f8fafc',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      // Expose l'état de la licence à Paramètres → « Licence & activation ».
+      preload: path.join(__dirname, 'app-preload.cjs'),
+    },
   });
   mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
   // Garde le titre « RestoPilote — Essai : X jours » (sinon remplacé par le <title> de la page).
@@ -270,6 +275,25 @@ function showActivationWindow() {
   });
 }
 
+// Canaux utilisés par Paramètres → « Licence & activation » (fenêtre principale).
+// Le preload n'expose que ces deux appels ; la clé ne fait jamais l'aller-retour inverse.
+function registerSettingsLicenceIpc() {
+  ipcMain.handle('desktop-licence:info', () => {
+    licenceState = license.checkLicense(app.getPath('userData'));
+    const { key, ...publicState } = licenceState; // la clé complète n'est pas renvoyée à la page
+    return { ...publicState, keyHint: key ? key.slice(0, 9) + '…' + key.slice(-6) : null };
+  });
+  ipcMain.handle('desktop-licence:activate', (_e, key) => {
+    const res = license.activate(app.getPath('userData'), key);
+    if (res.ok) {
+      licenceState = license.checkLicense(app.getPath('userData'));
+      windowTitle = 'RestoPilote';
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(windowTitle);
+    }
+    return res;
+  });
+}
+
 // Vérifie la licence au démarrage. Renvoie true si l'application peut se lancer.
 async function ensureLicence() {
   const dir = app.getPath('userData');
@@ -308,6 +332,7 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  registerSettingsLicenceIpc();
 
   // 1) PostgreSQL embarqué (aucune installation requise).
   //    D'abord : on libère le port si un ancien PostgreSQL de RestoPilote est resté bloqué.

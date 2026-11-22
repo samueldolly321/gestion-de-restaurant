@@ -19,7 +19,7 @@ export const ASSIGNABLE_ROLES: AppRole[] = ['gerant', 'comptable', 'chef_caisse'
 export const TAB_IDS = [
   'dashboard', 'orders', 'menu', 'reservations', 'personnel', 'deliveries',
   'clients', 'calendar', 'stocks', 'assets', 'finance', 'incomes', 'expenses',
-  'amortization', 'ia', 'settings',
+  'amortization', 'settings',
 ] as const;
 
 export type TabId = typeof TAB_IDS[number];
@@ -39,7 +39,6 @@ export const TAB_LABELS: Record<string, string> = {
   incomes: "Rentrées d'argent",
   expenses: 'Dépenses diverses',
   amortization: 'Amortissement',
-  ia: 'Analyses IA & Mérite',
   settings: 'Paramètres',
 };
 

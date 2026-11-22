@@ -3,7 +3,6 @@ import express from 'express';
 import { createServer as createHttpServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import path from 'path';
-import { GoogleGenAI } from '@google/genai';
 
 import bcrypt from 'bcryptjs';
 import { requireAuth, AuthRequest, TEST_LOGIN_TOKEN } from './src/middleware/auth.ts';
@@ -1764,75 +1763,6 @@ async function startServer() {
       res.json(list || []);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
-    }
-  });
-
-  // --- AI ANALYSIS ENDPOINT ---
-  let aiClient: GoogleGenAI | null = null;
-  function getGeminiClient() {
-    if (!aiClient) {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("Clé API GEMINI_API_KEY manquante. Veuillez la configurer dans les paramètres.");
-      }
-      aiClient = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-    }
-    return aiClient;
-  }
-
-  app.post('/api/ai/analyze', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { dbUserId, prompt } = req.body;
-      if (!dbUserId) {
-        return res.status(400).json({ error: 'Missing dbUserId' });
-      }
-      if (!prompt) {
-        return res.status(400).json({ error: 'Missing prompt' });
-      }
-
-      // Fetch context data
-      const [staff, menu, orders, reservations, stocks] = await Promise.all([
-        getPersonnel(dbUserId).catch(() => []),
-        getMenuItems(dbUserId).catch(() => []),
-        getOrders(dbUserId).catch(() => []),
-        getReservations(dbUserId).catch(() => []),
-        getStocks(dbUserId).catch(() => [])
-      ]);
-
-      // format context
-      const contextText = `
-Données réelles de l'établissement :
-- Personnel (${staff?.length || 0} employés) : ${JSON.stringify(staff?.map(p => ({ name: p.name, role: p.role, status: p.status, hourlyRate: p.hourlyRate, salary: p.salary, hireDate: p.hireDate, leave: p.leaveStart ? `${p.leaveStart} à ${p.leaveEnd}` : 'Aucun' })) || [])}
-- Plats du Menu (${menu?.length || 0} articles) : ${JSON.stringify(menu?.map(m => ({ name: m.name, price: m.price, category: m.category, available: m.isAvailable })) || [])}
-- Commandes / Ventes (${orders?.length || 0} ventes) : ${JSON.stringify(orders?.map(o => ({ id: o.id, table: o.tableNumber, status: o.status, amount: o.totalAmount, date: o.createdAt })) || [])}
-- Réservations (${reservations?.length || 0} réservations) : ${JSON.stringify(reservations?.map(r => ({ name: r.clientName, date: r.reservationDate, guests: r.guestsCount, table: r.tableNumber, status: r.status })) || [])}
-- Inventaire (${stocks?.length || 0} articles) : ${JSON.stringify(stocks?.map(s => ({ item: s.itemName, quantity: s.quantity, unit: s.unit, min: s.minStock })) || [])}
-`;
-
-      const ai = getGeminiClient();
-      const response = await ai.models.generateContent({
-        model: 'gemini-flash-latest', // alias : toujours le dernier modèle Flash (évite les dépréciations)
-        contents: `Question/Requête de l'utilisateur : "${prompt}"\n\nContext de l'établissement :\n${contextText}`,
-        config: {
-          systemInstruction: `Tu es l'assistant IA de gestion intégrée du restaurant. Réponds en français.
-Utilise les données réelles fournies de Madagascar / Ariary pour donner des réponses ultra-précises, chiffrées et concrètes.
-Si l'utilisateur demande les plats les plus ou moins vendus, analyse la liste des commandes et le menu.
-Si l'utilisateur demande le personnel qui travaille le plus ou le moins, analyse la liste du personnel (ceux en service "actif" vs en congé/absents, taux horaire, etc.).
-S'il demande un système de méritocratie, calcule ou propose un indice de performance ou score de mérite pour chaque membre du personnel selon les données disponibles (taux horaire, disponibilité "actif" vs "absent", salaire mensuel, etc.), sous forme de classement élégant avec des conseils pratiques pour motiver l'équipe. Sois encourageant et objectif.`
-        }
-      });
-
-      res.json({ text: response.text });
-    } catch (error: any) {
-      console.error('Error in AI analysis:', error);
-      res.status(500).json({ error: error.message || 'Une erreur est survenue lors de l\'analyse par l\'IA.' });
     }
   });
 

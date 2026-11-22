@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2 } from 'lucide-react';
+import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2, KeyRound, SlidersHorizontal } from 'lucide-react';
 import { DbUser } from '../types.ts';
+import LicensePanel from './LicensePanel.tsx';
 
 interface SettingsManagerProps {
   dbUser: DbUser;
@@ -26,6 +27,8 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [role, setRole] = useState(dbUser.role || 'super_admin');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Onglets de Paramètres : réglages généraux / licence de l'application de bureau.
+  const [section, setSection] = useState<'general' | 'licence'>('general');
 
   // Zone de danger : réinitialisation des données.
   const [resetScope, setResetScope] = useState<'financial' | 'all'>('financial'); // financier seul ou toutes les données
@@ -50,7 +53,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
           (r?.menuItems || 0) + (r?.stocks || 0) + (r?.suppliers || 0) + (r?.supplierOrders || 0) +
           (r?.supplierProducts || 0) + (r?.stockMovements || 0) + (r?.deliveries || 0) +
           (r?.expenses || 0) + (r?.incomes || 0) + (r?.recurringExpenses || 0) +
-          (r?.assets || 0) + (r?.specialEvents || 0) + (r?.notifications || 0);
+          (r?.assets || 0) + (r?.investmentItems || 0) + (r?.specialEvents || 0) + (r?.notifications || 0);
         setResetMsg(`Toutes les données ont été réinitialisées : ${total} enregistrement(s) supprimé(s) (commandes, clients, personnel, carte, stocks, fournisseurs, dépenses, rentrées, biens…). Les comptes utilisateurs sont conservés.`);
       } else {
         setResetMsg(`Réinitialisé : ${r?.orders || 0} additions, ${r?.expenses || 0} dépenses, ${r?.incomes || 0} rentrées et ${r?.recurringExpenses || 0} dépenses récurrentes supprimées.`);
@@ -108,6 +111,24 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
         <Settings className="w-5 h-5 text-red-600" />
       </div>
 
+      {/* Onglets */}
+      <div className="px-6 pt-4 flex gap-2 border-b border-slate-100">
+        {([
+          ['general', 'Général', SlidersHorizontal],
+          ['licence', 'Licence & activation', KeyRound],
+        ] as const).map(([id, label, Icon]) => (
+          <button key={id} type="button" onClick={() => setSection(id)}
+            className={`px-4 py-2 -mb-px text-xs font-bold flex items-center gap-1.5 border-b-2 cursor-pointer transition-colors ${
+              section === id ? 'border-red-600 text-red-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}>
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {section === 'licence' && <LicensePanel />}
+
+      {section === 'general' && (<>
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
         {!canEdit && (
           <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-amber-800 text-xs flex items-center gap-2 font-semibold">
@@ -369,6 +390,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }

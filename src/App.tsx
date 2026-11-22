@@ -57,13 +57,12 @@ import ExpensesManager from './components/ExpensesManager.tsx';
 import IncomeManager from './components/IncomeManager.tsx';
 import DeliveriesManager from './components/DeliveriesManager.tsx';
 import CalendarManager from './components/CalendarManager.tsx';
-import AIManager from './components/AIManager.tsx';
 import AssetsManager from './components/AssetsManager.tsx';
 import AmortizationManager from './components/AmortizationManager.tsx';
 
 import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset, InvestmentItem } from './types.ts';
 
-type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets' | 'amortization' | 'users';
+type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'assets' | 'amortization' | 'users';
 
 export default function App() {
   // Authentication states
@@ -2124,7 +2123,6 @@ export default function App() {
               { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp, tint: 'bg-green-100 text-green-600' },
               { id: 'expenses', label: 'Dépenses diverses', icon: Receipt, tint: 'bg-rose-100 text-rose-600' },
               { id: 'amortization', label: 'Amortissement', icon: PiggyBank, tint: 'bg-emerald-100 text-emerald-700' },
-              { id: 'ia', label: 'Analyses IA & Mérite', icon: Sparkles, tint: 'bg-violet-100 text-violet-600' },
               { id: 'users', label: 'Utilisateurs', icon: UserCog, tint: 'bg-red-100 text-red-700' },
               { id: 'settings', label: 'Paramètres', icon: Settings, tint: 'bg-slate-200 text-slate-600' },
             ].filter(tab => canAccessTab(tab.id)).map((tab) => {
@@ -2704,21 +2702,6 @@ export default function App() {
                     onResetFinancial={handleResetFinancial}
                   />
                 )}
-              </motion.div>
-            )}
-
-            {activeTab === 'ia' && (
-              <motion.div
-                key="ia-view"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.15 }}
-              >
-                <AIManager
-                  token={token}
-                  dbUserId={dataOwnerId || null}
-                />
               </motion.div>
             )}
 

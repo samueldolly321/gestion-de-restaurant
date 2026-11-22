@@ -168,8 +168,9 @@ function checkLicense(dir, now = Date.now(), io = { regRead, regWrite }) {
   const file = readFileState(dir) || {};
 
   // 1) Clé déjà enregistrée et valide pour ce poste ?
-  if (file.key && verifyKey(file.key).ok) {
-    return { status: 'activated', machineCode, key: file.key };
+  if (file.key) {
+    const v = verifyKey(file.key);
+    if (v.ok) return { status: 'activated', machineCode, key: file.key, issuedOn: v.issuedOn };
   }
 
   // 2) Période d'essai : date de 1er lancement = la plus ancienne connue (fichier, registre).

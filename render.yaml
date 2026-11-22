@@ -24,7 +24,5 @@ services:
         generateValue: true    # Render génère un secret aléatoire sûr
       - key: ENABLE_TEST_LOGIN
         value: "false"         # pas d'accès test en production
-      - key: GEMINI_API_KEY
-        sync: false            # optionnel : à renseigner dans le dashboard (onglet Analyses IA)
       - key: DATABASE_URL
         sync: false            # OBLIGATOIRE : chaîne de connexion de la base externe (Neon/Supabase)
