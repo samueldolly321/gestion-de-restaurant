@@ -2,11 +2,15 @@
 // Démarre un PostgreSQL PORTABLE embarqué (aucune installation requise), puis lance le
 // serveur Node embarqué (dist/server.cjs) qui s'y connecte, attend qu'il réponde, et
 // affiche l'application dans une fenêtre native. Fonctionne 100 % hors-ligne.
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { fork } = require('child_process');
+const license = require('./license.cjs');
+
+// Icône des fenêtres (barre des tâches) — générée par scripts/gen-icon.cjs.
+const WINDOW_ICON = path.join(__dirname, 'app-icon.png');
 
 // Nom stable de l'application : détermine le dossier de données utilisateur
 // (%APPDATA%/RestoPilote). Sans ça, Electron retombe sur le "name" du package.json
@@ -140,12 +144,15 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: 'RestoPilote',
+    title: windowTitle,
+    icon: WINDOW_ICON,
     backgroundColor: '#f8fafc',
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
+  // Garde le titre « RestoPilote — Essai : X jours » (sinon remplacé par le <title> de la page).
+  mainWindow.on('page-title-updated', (e) => e.preventDefault());
   // Gestion des window.open() :
   //  - Fenêtre d'impression de l'addition : window.open('', '_blank', ...) → url vide/about:blank.
   //    On l'AUTORISE à s'ouvrir dans Electron (sinon Windows cherche une app → dialogue Microsoft Store).
@@ -183,9 +190,91 @@ function showStartupError(err) {
   );
 }
 
+// ---------------- Licence : 7 jours d'essai puis clé d'activation ----------------
+let windowTitle = 'RestoPilote';
+let licenceState = null;
+let startupDone = false; // passe à true une fois la fenêtre principale ouverte
+
+// Fenêtre d'activation. Résout true si l'app peut démarrer (activée ou essai poursuivi), false sinon.
+function showActivationWindow() {
+  return new Promise((resolve) => {
+    let result = false;
+    const win = new BrowserWindow({
+      width: 620,
+      height: 640,
+      useContentSize: true,
+      resizable: false,
+      maximizable: false,
+      title: 'RestoPilote — Activation',
+      icon: WINDOW_ICON,
+      autoHideMenuBar: true,
+      backgroundColor: '#f8fafc',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: path.join(__dirname, 'activation-preload.cjs'),
+      },
+    });
+    const done = (ok) => { result = ok; if (!win.isDestroyed()) win.close(); };
+    ipcMain.handle('licence:info', () => licenceState);
+    ipcMain.handle('licence:copy', (_e, text) => { clipboard.writeText(String(text || '')); return true; });
+    ipcMain.handle('licence:activate', (_e, key) => {
+      const res = license.activate(app.getPath('userData'), key);
+      if (res.ok) {
+        licenceState = license.checkLicense(app.getPath('userData'));
+        setTimeout(() => done(true), 1200); // laisse le temps de lire « Activation réussie »
+      }
+      return res;
+    });
+    ipcMain.handle('licence:continue', () => { done(licenceState && licenceState.status === 'trial'); return true; });
+    ipcMain.handle('licence:quit', () => { done(false); return true; });
+    win.on('closed', () => {
+      ['licence:info', 'licence:copy', 'licence:activate', 'licence:continue', 'licence:quit'].forEach((c) => ipcMain.removeHandler(c));
+      // Fermer la fenêtre pendant l'essai = continuer l'essai.
+      resolve(result || (licenceState && (licenceState.status === 'trial' || licenceState.status === 'activated')));
+    });
+    win.loadFile(path.join(__dirname, 'activation.html'));
+  });
+}
+
+// Vérifie la licence au démarrage. Renvoie true si l'application peut se lancer.
+async function ensureLicence() {
+  const dir = app.getPath('userData');
+  licenceState = license.checkLicense(dir);
+  if (licenceState.status === 'activated') return true;
+  if (licenceState.status === 'trial') {
+    const n = licenceState.daysLeft;
+    windowTitle = `RestoPilote — Version d'essai : ${n} jour${n > 1 ? 's' : ''} restant${n > 1 ? 's' : ''}`;
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: "RestoPilote — Version d'essai",
+      message: `Version d'essai : il vous reste ${n} jour${n > 1 ? 's' : ''}.`,
+      detail: "Après 7 jours, une clé d'activation sera nécessaire. Vos données sont conservées.",
+      buttons: ["Continuer l'essai", 'Activer maintenant'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      icon: WINDOW_ICON,
+    });
+    if (response === 1) await showActivationWindow();
+    if (licenceState.status === 'activated') windowTitle = 'RestoPilote';
+    return true;
+  }
+  // Essai terminé : activation obligatoire.
+  const ok = await showActivationWindow();
+  if (licenceState.status === 'activated') windowTitle = 'RestoPilote';
+  return ok && licenceState.status === 'activated';
+}
+
 app.whenReady().then(async () => {
   loadUserEnv();
   const appRoot = resolveAppRoot();
+
+  // 0) Licence (essai de 7 jours / clé d'activation) — avant de démarrer quoi que ce soit.
+  if (!(await ensureLicence())) {
+    app.quit();
+    return;
+  }
 
   // 1) PostgreSQL embarqué (aucune installation requise).
   try {
@@ -202,6 +291,7 @@ app.whenReady().then(async () => {
   try {
     await waitForServer();
     createWindow();
+    startupDone = true;
   } catch (err) {
     console.error('Le serveur local ne répond pas :', err);
     showStartupError(err);
@@ -228,5 +318,10 @@ app.on('before-quit', async (e) => {
   app.quit();
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+// Pendant le démarrage (fenêtre d'activation fermée avant l'ouverture de la fenêtre principale),
+// on ne quitte pas : c'est ensureLicence() qui décide.
+app.on('window-all-closed', () => {
+  if (!mainWindow && !startupDone) return;
+  if (process.platform !== 'darwin') app.quit();
+});
 app.on('activate', () => { if (mainWindow === null && serverProcess) createWindow(); });

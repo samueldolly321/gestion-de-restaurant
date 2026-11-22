@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Icône RestoPilote : cloche de chef blanche sur fond rouge → orange (couleurs de l'app). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="0.55" stop-color="#dc2626"/>
+      <stop offset="1" stop-color="#ea580c"/>
+    </linearGradient>
+    <linearGradient id="dome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fde8e8"/>
+    </linearGradient>
+  </defs>
+  <!-- Fond -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="240" rx="112" fill="#ffffff" opacity="0.08"/>
+  <!-- Vapeur -->
+  <g fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" opacity="0.9">
+    <path d="M196 132 q-18 -22 0 -44 q18 -22 0 -44" transform="translate(0,18)"/>
+    <path d="M316 132 q-18 -22 0 -44 q18 -22 0 -44" transform="translate(0,18)"/>
+  </g>
+  <!-- Bouton de la cloche -->
+  <circle cx="256" cy="176" r="22" fill="#ffffff"/>
+  <!-- Dôme -->
+  <path d="M112 352 A144 144 0 0 1 400 352 Z" fill="url(#dome)"/>
+  <!-- Reflet sur le dôme -->
+  <path d="M164 318 A100 100 0 0 1 226 238" fill="none" stroke="#dc2626" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+  <!-- Plateau -->
+  <rect x="84" y="360" width="344" height="36" rx="18" fill="#ffffff"/>
+  <!-- Petit accent doré (le « pilote ») -->
+  <rect x="216" y="414" width="80" height="14" rx="7" fill="#fbbf24"/>
+</svg>

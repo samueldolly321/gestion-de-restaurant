@@ -36,7 +36,17 @@
       "!image/**",
       "!*.md",
       "!note",
-      "!.env*"
+      "!.env*",
+      "!mot-de-passe",
+      "!fichier exe application/**",
+      "!licence-privee/**",
+      "!scripts/**",
+      "!build/**",
+      "!assets/**",
+      "!chefsuite",
+      "!tutoriel.docx",
+      "!metadata.json",
+      "!render.yaml"
     ],
     "extraMetadata": {
       "main": "electron/main.cjs"
@@ -44,9 +54,13 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

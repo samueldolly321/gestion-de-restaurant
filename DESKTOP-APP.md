@@ -82,3 +82,33 @@ npm run desktop        # construit puis ouvre directement la fenêtre de l'appli
 ---
 
 *Fichiers concernés : `electron/main.cjs` (Postgres embarqué + serveur), `server.ts` (migrations au boot si `RUN_MIGRATIONS`), `src/db/index.ts` (port `SQL_PORT`), `package.json` (section `build` + scripts `desktop`/`db:generate`), `drizzle/` (migrations), `dist/` (serveur + front construits).*
+
+---
+
+## 🔑 Licence : 7 jours d'essai puis clé d'activation (ajouté le 22/11/2026)
+
+- **Au 1er lancement**, l'essai de **7 jours** démarre. À chaque lancement pendant l'essai, une fenêtre indique les jours restants (« Continuer l'essai » / « Activer maintenant ») et le titre de la fenêtre affiche « Version d'essai : X jours restants ».
+- **Après 7 jours**, l'application ne démarre plus sans clé : une fenêtre d'activation affiche le **code machine** du PC (ex. `E109-DF8C-946D-EFDF`) et un champ pour coller la clé. Les données sont conservées.
+- La clé est **liée au PC** (empreinte du MachineGuid Windows) et **signée Ed25519** : impossible d'en fabriquer une sans la clé privée. Une clé générée pour un PC ne marche pas sur un autre.
+- Début de l'essai mémorisé dans `%APPDATA%/RestoPilote/licence.json` **et** dans le registre (`HKCU\Software\RestoPilote`) : supprimer l'un ne relance pas l'essai. Un recul de l'horloge (> 2 jours) est détecté.
+- Code : `electron/license.cjs` (vérification), `electron/activation.html` + `activation-preload.cjs` (fenêtre), `electron/main.cjs` (`ensureLicence()`).
+
+### Générer une clé pour un client
+1. Le client vous envoie le **code machine** affiché dans sa fenêtre d'activation.
+2. Sur VOTRE PC (dans le dossier du projet) :
+   ```powershell
+   node scripts/generer-cle.mjs E109-DF8C-946D-EFDF "Nom du restaurant"
+   ```
+3. Envoyez-lui la clé affichée (`RP-XXXXXX-…`) : il la colle et clique sur « Activer ».
+- Chaque clé est notée dans `licence-privee/cles-emises.csv`.
+
+### ⚠️ Clé privée : `licence-privee/cle-privee.pem`
+- **Jamais** sur GitHub (gitignoré) ni dans le `.exe` (exclu du build).
+- **SAUVEGARDEZ-LA** (clé USB, cloud privé). Si elle est perdue, plus aucune clé valide ne peut être générée pour les versions déjà distribuées (il faudrait une nouvelle paire de clés + une nouvelle version de l'application).
+- Limite : c'est une protection « honnête » contre le partage/la copie, pas une protection absolue (un développeur expérimenté peut modifier le code d'une app Electron).
+
+## 🎨 Icône
+- Source : `build/icon.svg`. Régénérer `build/icon.ico`, `build/icon.png` et `electron/app-icon.png` avec :
+  ```powershell
+  npx electron scripts/gen-icon.cjs
+  ```

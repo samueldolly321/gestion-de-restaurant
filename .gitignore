@@ -1,5 +1,5 @@
 node_modules/
-build/
+# build/ contient les ressources de l'installateur (icône) : versionné
 dist/
 coverage/
 .DS_Store
@@ -26,3 +26,6 @@ release/
 # Fichiers locaux sensibles / volumineux (jamais sur GitHub)
 mot-de-passe
 fichier exe application/
+
+# Licence desktop : clé PRIVÉE de signature + registre des clés émises (JAMAIS sur GitHub)
+licence-privee/
