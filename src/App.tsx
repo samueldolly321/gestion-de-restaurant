@@ -59,6 +59,7 @@ import DeliveriesManager from './components/DeliveriesManager.tsx';
 import CalendarManager from './components/CalendarManager.tsx';
 import AssetsManager from './components/AssetsManager.tsx';
 import AmortizationManager from './components/AmortizationManager.tsx';
+import PublicPages, { PUBLIC_PAGE_IDS, PublicPageId } from './components/PublicPages.tsx';
 
 import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset, InvestmentItem } from './types.ts';
 
@@ -79,7 +80,7 @@ export default function App() {
   const [showAuthPassword, setShowAuthPassword] = useState(false); // oeil afficher/masquer le mot de passe
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [selectedRole, setSelectedRole] = useState<'super_admin' | 'gerant'>('super_admin');
-  const [loginSubView, setLoginSubView] = useState<'login' | 'contact' | 'privacy'>('login');
+  const [loginSubView, setLoginSubView] = useState<'login' | 'contact' | PublicPageId>('login');
 
   // App active view
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -1322,6 +1323,7 @@ export default function App() {
     managerName?: string | null;
     restaurantNif?: string | null;
     restaurantStat?: string | null;
+    ticketFormat?: string | null;
     role: string;
   }) => {
     if (!token || !dbUser) return;
@@ -1353,6 +1355,7 @@ export default function App() {
         managerName: updatedOwner.managerName,
         restaurantNif: updatedOwner.restaurantNif,
         restaurantStat: updatedOwner.restaurantStat,
+        ticketFormat: updatedOwner.ticketFormat,
       } : prev);
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -1649,67 +1652,12 @@ export default function App() {
                 </button>
               </div>
             </div>
-          ) : loginSubView === 'privacy' ? (
-            <div className="w-full max-w-2xl bg-white border border-slate-100 rounded-3xl p-8 shadow-sm text-left space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-red-50 text-red-600 rounded-xl">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="font-display font-black text-lg text-slate-900">Charte de Confidentialité</h2>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">Sécurité des Données RestoPilote</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setLoginSubView('login')}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" /> Retour
-                </button>
-              </div>
-
-              <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 text-xs text-slate-600 leading-relaxed">
-                <div className="space-y-1.5">
-                  <h3 className="font-bold text-slate-800">1. Propriété Souveraine des Données</h3>
-                  <p>
-                    Toutes vos données de restauration (ventes, additions en Ariary, état des stocks, fiches de personnel et plannings) vous appartiennent de manière exclusive. Elles sont stockées en toute sécurité sur votre serveur PostgreSQL, que ce soit localement sur votre ordinateur ou sur votre infrastructure Cloud dédiée.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <h3 className="font-bold text-slate-800">2. Respect du Personnel &amp; Méritocratie</h3>
-                  <p>
-                    L'enregistrement des temps de présence, des salaires, des congés et l'indice de mérite calculé par notre module d'analyse IA sont conçus pour assurer une totale équité et transparence. Ces données ne sont jamais partagées à des tiers et servent uniquement à générer des rapports de management internes à votre entreprise.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <h3 className="font-bold text-slate-800">3. Sécurité Locale Totale</h3>
-                  <p>
-                    Lorsque l'application RestoPilote est déployée en local sur votre poste de travail à l'aide de PostgreSQL, vous gardez le contrôle physique et réseau absolu sur votre base de données. Aucune donnée n'est envoyée vers des serveurs distants : l'authentification est gérée localement par votre base PostgreSQL (mots de passe hachés, sessions signées).
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <h3 className="font-bold text-slate-800">4. Traitement des Analyses par Intelligence Artificielle</h3>
-                  <p>
-                    Les fonctionnalités IA de RestoPilote s'exécutent au travers de passerelles de sécurité qui anonymisent les noms et informations nominatives de votre équipe avant de solliciter les modèles de langage de pointe de l'IA. Cela garantit un traitement ultra-sécurisé sans fuite d'informations confidentielles.
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-center pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setLoginSubView('login')}
-                  className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-red-600/10"
-                >
-                  Compris, Retour
-                </button>
-              </div>
-            </div>
+          ) : (PUBLIC_PAGE_IDS as string[]).includes(loginSubView) ? (
+            <PublicPages
+              page={loginSubView as PublicPageId}
+              onBack={() => setLoginSubView('login')}
+              onNavigate={(p) => { setLoginSubView(p); window.scrollTo({ top: 0 }); }}
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-12 gap-10 items-center w-full">
               <div className="md:col-span-7 text-left space-y-6">
@@ -1740,7 +1688,7 @@ export default function App() {
                     <div>
                       <h4 className="text-xs font-black text-slate-800 mb-1 font-display">Plats & Menu</h4>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Cartes interactives, suivi des ventes de plats et suggestions de prix.
+                        Carte en images, fiches techniques et coût de revient de chaque plat.
                       </p>
                     </div>
                     {/* Visual Illustration */}
@@ -1767,7 +1715,7 @@ export default function App() {
                     <div>
                       <h4 className="text-xs font-black text-slate-800 mb-1 font-display">Gestion Personnel</h4>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Fiches de présence, salaires, congés et méritocratie en direct.
+                        Fiches du personnel, salaires, congés et planning en direct.
                       </p>
                     </div>
                     {/* Overlapping avatar stacks for illustration */}
@@ -2022,22 +1970,26 @@ export default function App() {
             <p className="text-[11px] text-slate-400 font-semibold">
               © 2026 RestoPilote • Madagascar.
             </p>
-            <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
-              <button
-                type="button"
-                onClick={() => setLoginSubView('contact')}
-                className="hover:text-red-600 transition-colors cursor-pointer text-[11px]"
-              >
-                Contact &amp; Support
-              </button>
-              <span className="text-slate-300">•</span>
-              <button
-                type="button"
-                onClick={() => setLoginSubView('privacy')}
-                className="hover:text-red-600 transition-colors cursor-pointer text-[11px]"
-              >
-                Confidentialité
-              </button>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
+              {([
+                ['buy', 'Acheter RestoPilote'],
+                ['faq', 'FAQ'],
+                ['contact', 'Contact & Support'],
+                ['privacy', 'Confidentialité'],
+                ['terms', 'Conditions générales'],
+                ['legal', 'Mentions légales'],
+              ] as const).map(([id, label], i) => (
+                <React.Fragment key={id}>
+                  {i > 0 && <span className="text-slate-300">•</span>}
+                  <button
+                    type="button"
+                    onClick={() => { setLoginSubView(id); window.scrollTo({ top: 0 }); }}
+                    className={`transition-colors cursor-pointer text-[11px] ${id === 'buy' ? 'text-red-600 font-bold hover:text-red-700' : 'hover:text-red-600'}`}
+                  >
+                    {label}
+                  </button>
+                </React.Fragment>
+              ))}
             </div>
           </div>
         </footer>
@@ -2449,6 +2401,7 @@ export default function App() {
                   restaurantPhone={dbUser?.restaurantPhone}
                   restaurantNif={dbUser?.restaurantNif}
                   restaurantStat={dbUser?.restaurantStat}
+                  ticketFormat={dbUser?.ticketFormat}
                   onAddOrder={handleAddOrder}
                   onEditOrder={handleEditOrder}
                   onDeleteOrder={handleDeleteOrder}

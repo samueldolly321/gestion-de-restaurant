@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "ticket_format" text DEFAULT '80mm';

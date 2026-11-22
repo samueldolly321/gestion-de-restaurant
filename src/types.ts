@@ -13,6 +13,7 @@ export interface DbUser {
   managerName?: string | null; // nom du gérant (non imprimé)
   restaurantNif?: string | null; // NIF — imprimé sur la facture
   restaurantStat?: string | null; // STAT — imprimé sur la facture
+  ticketFormat?: '58mm' | '80mm' | 'A4' | string | null; // format d'impression de l'addition
   openingDate?: string | null; // date d'ouverture (YYYY-MM-DD)
   role: 'super_admin' | 'gerant' | 'comptable' | 'chef_caisse' | 'serveur' | string;
   allowedTabs?: string[]; // onglets accessibles (effectifs) renvoyés par le serveur

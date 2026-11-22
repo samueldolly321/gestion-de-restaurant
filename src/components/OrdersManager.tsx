@@ -24,6 +24,7 @@ interface OrdersManagerProps {
   restaurantPhone?: string | null;
   restaurantNif?: string | null;
   restaurantStat?: string | null;
+  ticketFormat?: string | null; // '58mm' | '80mm' | 'A4' (Paramètres)
   onAddOrder: (formData: any) => Promise<void>;
   onEditOrder: (id: number, formData: any) => Promise<void>;
   onDeleteOrder: (id: number) => Promise<void>;
@@ -40,6 +41,7 @@ export default function OrdersManager({
   restaurantPhone,
   restaurantNif,
   restaurantStat,
+  ticketFormat,
   onAddOrder,
   onEditOrder,
   onDeleteOrder
@@ -256,7 +258,9 @@ export default function OrdersManager({
 
   // Impression de l'addition au format ticket de restaurant (nouvelle fenêtre + impression).
   const printBill = (order: Order) => {
-    const win = window.open('', '_blank', 'width=380,height=640');
+    // Format choisi dans Paramètres : ticket 58 mm, ticket 80 mm (défaut) ou page A4.
+    const fmt = ticketFormat === '58mm' || ticketFormat === 'A4' ? ticketFormat : '80mm';
+    const win = window.open('', '_blank', fmt === 'A4' ? 'width=820,height=900' : 'width=380,height=640');
     if (!win) {
       alert("Veuillez autoriser les fenêtres pop-up pour imprimer l'addition.");
       return;
@@ -289,6 +293,25 @@ export default function OrdersManager({
         @page { size: 80mm auto; margin: 0; }
         * { font-family: 'Courier New', Courier, monospace; box-sizing: border-box; }
         body { width: 80mm; margin: 0 auto; padding: 4mm 3mm; color: #000; }
+        ${fmt === '58mm' ? `
+        /* Ticket 58 mm : zone imprimable ~48 mm, police plus petite */
+        @page { size: 58mm auto; margin: 0; }
+        body { width: 58mm; padding: 3mm 2mm; }
+        .logo { max-width: 40mm !important; max-height: 16mm !important; }
+        h1 { font-size: 13px !important; letter-spacing: 0 !important; }
+        .info, .sub, .foot { font-size: 9.5px !important; }
+        table { font-size: 10.5px !important; }
+        td.r { padding-left: 4px !important; }
+        .total td { font-size: 12.5px !important; }` : ''}
+        ${fmt === 'A4' ? `
+        /* Page A4 : marges classiques, texte plus grand, centré sur 150 mm */
+        @page { size: A4; margin: 15mm; }
+        body { width: auto; max-width: 150mm; padding: 0; }
+        .logo { max-width: 70mm !important; max-height: 30mm !important; }
+        h1 { font-size: 22px !important; }
+        .info, .sub, .foot { font-size: 13px !important; }
+        table { font-size: 14px !important; }
+        .total td { font-size: 18px !important; }` : ''}
         .logo { display: block; margin: 0 auto 6px; max-width: 55mm; max-height: 22mm; object-fit: contain;
           filter: grayscale(1) contrast(1.15); -webkit-filter: grayscale(1) contrast(1.15);
           print-color-adjust: exact; -webkit-print-color-adjust: exact; }

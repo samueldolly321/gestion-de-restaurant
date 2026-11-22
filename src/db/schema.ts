@@ -19,6 +19,7 @@ export const users = pgTable('users', {
   managerName: text('manager_name'), // Nom du gérant (Paramètres ; non imprimé sur la facture)
   restaurantNif: text('restaurant_nif'), // NIF (numéro d'identification fiscale) — imprimé sur la facture
   restaurantStat: text('restaurant_stat'), // N° STAT (statistique) — imprimé sur la facture
+  ticketFormat: text('ticket_format').default('80mm'), // Format d'impression de l'addition : '58mm' | '80mm' | 'A4'
   role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
   allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
   openingDate: text('opening_date'), // Date d'ouverture (YYYY-MM-DD) — point de départ du calcul d'amortissement

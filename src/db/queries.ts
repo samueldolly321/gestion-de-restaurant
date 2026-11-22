@@ -79,6 +79,7 @@ export async function updateUserConfig(
     managerName?: string | null;
     restaurantNif?: string | null;
     restaurantStat?: string | null;
+    ticketFormat?: string | null;
     role?: string;
     openingDate?: string | null;
   }

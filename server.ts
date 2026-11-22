@@ -167,6 +167,7 @@ async function startServer() {
         sessionUser.managerName = owner.managerName;
         sessionUser.restaurantNif = owner.restaurantNif;
         sessionUser.restaurantStat = owner.restaurantStat;
+        sessionUser.ticketFormat = owner.ticketFormat;
         sessionUser.openingDate = owner.openingDate;
       }
     }
@@ -1043,7 +1044,7 @@ async function startServer() {
   // --- CONFIG/SETTINGS ENDPOINTS ---
   app.put('/api/users/config', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, managerName, restaurantNif, restaurantStat, role } = req.body;
+      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, managerName, restaurantNif, restaurantStat, ticketFormat, role } = req.body;
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
@@ -1063,6 +1064,7 @@ async function startServer() {
         managerName: managerName !== undefined ? (String(managerName || '').trim() || null) : undefined,
         restaurantNif: restaurantNif !== undefined ? (String(restaurantNif || '').trim() || null) : undefined,
         restaurantStat: restaurantStat !== undefined ? (String(restaurantStat || '').trim() || null) : undefined,
+        ticketFormat: ticketFormat !== undefined ? (['58mm', '80mm', 'A4'].includes(ticketFormat) ? ticketFormat : '80mm') : undefined,
         role
       });
       res.json(updated);

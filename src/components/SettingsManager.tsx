@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2, KeyRound, SlidersHorizontal, FileText, UserRound } from 'lucide-react';
+import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2, KeyRound, SlidersHorizontal, FileText, UserRound, Printer } from 'lucide-react';
 import { DbUser } from '../types.ts';
 import LicensePanel from './LicensePanel.tsx';
 
@@ -14,6 +14,7 @@ interface SettingsManagerProps {
     managerName: string | null;
     restaurantNif: string | null;
     restaurantStat: string | null;
+    ticketFormat: string;
     role: string;
   }) => Promise<void>;
   onResetFinancial?: (scope: 'financial' | 'all') => Promise<any>;
@@ -30,6 +31,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [managerName, setManagerName] = useState(dbUser.managerName || '');
   const [restaurantNif, setRestaurantNif] = useState(dbUser.restaurantNif || '');
   const [restaurantStat, setRestaurantStat] = useState(dbUser.restaurantStat || '');
+  const [ticketFormat, setTicketFormat] = useState<string>(dbUser.ticketFormat || '80mm');
   const [role, setRole] = useState(dbUser.role || 'super_admin');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -88,6 +90,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
         managerName: managerName.trim() || null,
         restaurantNif: restaurantNif.trim() || null,
         restaurantStat: restaurantStat.trim() || null,
+        ticketFormat,
         role,
       });
       setSuccess(true);
@@ -262,6 +265,34 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
               <p className="text-[9px] text-slate-400">
                 Imprimés en haut de la facture : nom, adresse, téléphone, NIF et STAT. Le nom du gérant n'est pas imprimé.
               </p>
+            </div>
+
+            {/* Format d'impression de l'addition */}
+            <div className="p-4 bg-slate-50/60 border border-slate-200 rounded-2xl space-y-3">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Printer className="w-3.5 h-3.5 text-red-600" /> Format d'impression de l'addition
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  ['58mm', 'Ticket 58 mm', 'Petite imprimante thermique'],
+                  ['80mm', 'Ticket 80 mm', 'Imprimante de caisse standard'],
+                  ['A4', 'Page A4', 'Imprimante de bureau'],
+                ] as const).map(([value, label, hint]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => setTicketFormat(value)}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
+                      ticketFormat === value ? 'border-red-500 bg-red-50 ring-1 ring-red-500/30' : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={`block text-xs font-bold ${ticketFormat === value ? 'text-red-700' : 'text-slate-800'}`}>{label}</span>
+                    <span className="block text-[9px] text-slate-400 mt-0.5">{hint}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[9px] text-slate-400">Utilisé par « Imprimer l'addition ». Pensez à enregistrer la configuration.</p>
             </div>
 
             <div>
