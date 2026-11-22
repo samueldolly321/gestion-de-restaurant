@@ -29,3 +29,6 @@ fichier exe application/
 
 # Licence desktop : clé PRIVÉE de signature + registre des clés émises (JAMAIS sur GitHub)
 licence-privee/
+
+# Fichiers temporaires de Word/Excel
+~$*
