@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Order, MenuItem, Personnel, Client } from '../types.ts';
 import { Search, Plus, Minus, CreditCard, ChevronLeft, ChevronRight, Edit2, Trash2, X, ShoppingBag, ArrowRight, CheckCircle, Wallet, Smartphone, Coins, UtensilsCrossed, Printer, Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import MenuPicker from './MenuPicker.tsx';
 
 // Ligne de commande locale (plat/boisson choisi pour la table)
 interface OrderLine {
@@ -50,7 +51,6 @@ export default function OrdersManager({
   const [tableNumber, setTableNumber] = useState(1);
   const [status, setStatus] = useState('en_attente');
   const [items, setItems] = useState<OrderLine[]>([]);
-  const [selectedMenuItemId, setSelectedMenuItemId] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('especes');
   const [serverName, setServerName] = useState('');
   const [orderType, setOrderType] = useState('sur_place'); // 'sur_place' ou 'a_livrer'
@@ -155,7 +155,6 @@ export default function OrdersManager({
     setTableNumber(1);
     setStatus('en_attente');
     setItems([]);
-    setSelectedMenuItemId(0);
     setPaymentMethod('especes');
     setServerName('');
     setOrderType('sur_place');
@@ -178,7 +177,6 @@ export default function OrdersManager({
         category: i.category,
       }))
     );
-    setSelectedMenuItemId(0);
     setPaymentMethod(order.paymentMethod || 'especes');
     setServerName(order.serverName || '');
     setOrderType(order.orderType || 'sur_place');
@@ -549,7 +547,7 @@ export default function OrdersManager({
       {/* Add / Edit modal - Wider Width (max-w-xl md:max-w-2xl) */}
       {isOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative text-left max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl md:max-w-2xl lg:max-w-6xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative text-left max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setIsOpen(false)}
               className="sticky top-0 float-right -mt-2 -mr-2 p-1.5 bg-white/90 backdrop-blur text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer z-10"
@@ -561,8 +559,24 @@ export default function OrdersManager({
               <ShoppingBag className="w-5 h-5 text-red-600" />
               {editingOrder ? 'Modifier la Commande' : 'Ouvrir un Service Table'}
             </h3>
-            <p className="text-[10px] text-slate-400 mb-6">Saisissez les informations de service de la table pour les commandes en Ariary.</p>
+            <p className="text-[10px] text-slate-400 mb-6">Cliquez sur les plats et boissons de la carte pour les ajouter à l'addition.</p>
 
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-6 lg:gap-8">
+            {/* Gauche : la carte en images (clic = ajout à l'addition) */}
+            <div className="lg:border-r lg:border-slate-100 lg:pr-8">
+              <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <UtensilsCrossed className="w-3.5 h-3.5 text-red-600" /> La carte
+              </h4>
+              <MenuPicker
+                menuItems={menuItems}
+                quantities={Object.fromEntries(items.map((i) => [i.menuItemId, i.quantity]))}
+                onAdd={addMenuItem}
+                onRemoveOne={(id) => changeQty(id, -1)}
+                formatAr={formatAr}
+              />
+            </div>
+
+            {/* Droite : informations de la table + addition */}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -662,41 +676,14 @@ export default function OrdersManager({
 
               {/* Constructeur d'addition : plats & boissons de la table */}
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Plats &amp; boissons de la table</label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedMenuItemId}
-                    onChange={(e) => setSelectedMenuItemId(parseInt(e.target.value) || 0)}
-                    className="flex-1 px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all text-slate-800 cursor-pointer"
-                  >
-                    <option value={0}>— Choisir un plat ou une boisson —</option>
-                    {menuItems.filter((m) => m.isAvailable).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} — {formatAr(m.price)}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedMenuItemId) {
-                        addMenuItem(selectedMenuItemId);
-                        setSelectedMenuItemId(0);
-                      }
-                    }}
-                    disabled={!selectedMenuItemId}
-                    className="px-3.5 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                  >
-                    <Plus className="w-4 h-4" /> Ajouter
-                  </button>
-                </div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Addition de la table</label>
 
                 {/* Lignes de commande */}
-                <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
+                <div className="space-y-2 max-h-64 overflow-y-auto">
                   {items.length === 0 ? (
                     <div className="text-center py-6 text-slate-300 border border-dashed border-slate-200 rounded-xl">
                       <UtensilsCrossed className="w-5 h-5 mx-auto mb-1 opacity-60" />
-                      <p className="text-[10px] font-semibold">Aucun plat ajouté — l'addition est à 0 Ar</p>
+                      <p className="text-[10px] font-semibold">Cliquez sur un plat de la carte pour l'ajouter</p>
                     </div>
                   ) : (
                     items.map((it) => (
@@ -862,6 +849,7 @@ export default function OrdersManager({
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

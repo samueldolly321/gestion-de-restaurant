@@ -1,23 +1,8 @@
 import React, { useState } from 'react';
 import { MenuItem, Ingredient, Stock } from '../types.ts';
 import { Search, Plus, Utensils, ToggleLeft, ToggleRight, Trash2, Edit2, X, Image as ImageIcon, Scale, Link2 } from 'lucide-react';
-
-// Catégories prédéfinies de la carte. La catégorie est stockée en texte libre :
-// on peut donc aussi en créer des personnalisées via l'option "Autre".
-const MENU_CATEGORIES: { value: string; label: string; color: string }[] = [
-  { value: 'entree_chaude', label: 'Entrée chaude', color: 'bg-orange-50 text-orange-700 border-orange-100' },
-  { value: 'entree_froide', label: 'Entrée froide', color: 'bg-sky-50 text-sky-700 border-sky-100' },
-  { value: 'plat', label: 'Plat de résistance', color: 'bg-red-50 text-red-700 border-red-100' },
-  { value: 'snack', label: 'Snack', color: 'bg-lime-50 text-lime-700 border-lime-100' },
-  { value: 'dessert', label: 'Dessert', color: 'bg-amber-50 text-amber-700 border-amber-100' },
-  { value: 'boisson_chaude', label: 'Boisson chaude', color: 'bg-rose-50 text-rose-700 border-rose-100' },
-  { value: 'boisson_fraiche', label: 'Boisson fraîche', color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-  { value: 'boisson_alcoolisee', label: 'Boisson alcoolisée', color: 'bg-purple-50 text-purple-700 border-purple-100' },
-  { value: 'cocktail', label: 'Cocktail', color: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100' },
-];
-
-// Anciennes valeurs (compat) pour les articles déjà enregistrés avant l'enrichissement.
-const LEGACY_CATEGORY_LABELS: Record<string, string> = { entree: 'Entrée', boisson: 'Boisson' };
+// Catégories prédéfinies de la carte (partagées avec « Ouvrir une commande »).
+import { MENU_CATEGORIES, LEGACY_CATEGORY_LABELS } from '../lib/menuCategories.ts';
 
 const CUSTOM_CATEGORY = '__custom__';
 
