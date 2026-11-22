@@ -58,7 +58,7 @@ export default function OrdersManager({
   const [selectedPayMethod, setSelectedPayMethod] = useState('especes');
 
   // Form states
-  const [tableNumber, setTableNumber] = useState(1);
+  const [tableNumber, setTableNumber] = useState(''); // saisi au clavier (texte), converti en nombre à l'envoi
   const [status, setStatus] = useState('en_attente');
   const [items, setItems] = useState<OrderLine[]>([]);
   const [paymentMethod, setPaymentMethod] = useState('especes');
@@ -162,7 +162,7 @@ export default function OrdersManager({
 
   const openAddModal = () => {
     setEditingOrder(null);
-    setTableNumber(1);
+    setTableNumber(''); // vide : le serveur tape directement le numéro
     setStatus('en_attente');
     setItems([]);
     setPaymentMethod('especes');
@@ -176,7 +176,7 @@ export default function OrdersManager({
 
   const openEditModal = (order: Order) => {
     setEditingOrder(order);
-    setTableNumber(order.tableNumber);
+    setTableNumber(String(order.tableNumber));
     setStatus(order.status);
     setItems(
       (order.items || []).map((i) => ({
@@ -209,9 +209,14 @@ export default function OrdersManager({
       alert('Seul un employé au rôle « Serveur » peut prendre la commande. Sélectionnez un serveur (ou ajoutez-en un dans Personnel).');
       return;
     }
+    const tableNum = parseInt(tableNumber, 10);
+    if (!tableNum || tableNum < 1) {
+      alert('Saisissez un numéro de table (1 ou plus).');
+      return;
+    }
     // On envoie les lignes ; le total est recalculé côté serveur à partir de celles-ci.
     const payload = {
-      tableNumber,
+      tableNumber: tableNum,
       status,
       paymentMethod,
       serverName: serverName || null,
@@ -628,12 +633,15 @@ export default function OrdersManager({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Numéro de Table *</label>
+                  {/* Saisie directe au clavier (pas de flèches +/−) : chiffres uniquement, le champ peut être vidé. */}
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     required
-                    min="1"
                     value={tableNumber}
-                    onChange={(e) => setTableNumber(parseInt(e.target.value) || 1)}
+                    onChange={(e) => setTableNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    onFocus={(e) => e.target.select()}
                     className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800 font-mono"
                     placeholder="Ex. 5"
                   />
