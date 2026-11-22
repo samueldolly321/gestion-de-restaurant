@@ -76,6 +76,14 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authOwnerEmail, setAuthOwnerEmail] = useState(''); // e-mail du super admin à rejoindre (gérant)
   const [authValidationEmail, setAuthValidationEmail] = useState(''); // e-mail d'autorisation pour créer un Super Admin
+  // App de bureau neuve (aucun Super Admin) : le 1er compte se crée sans e-mail de validation.
+  const [firstAccountOpen, setFirstAccountOpen] = useState(false);
+  useEffect(() => {
+    fetch('/api/auth/setup-status')
+      .then((r) => (r.ok ? r.json() : { firstAccountOpen: false }))
+      .then((d) => setFirstAccountOpen(!!d.firstAccountOpen))
+      .catch(() => {});
+  }, [!!dbUser]); // re-vérifié à chaque connexion / déconnexion
   const [authPassword, setAuthPassword] = useState('');
   const [showAuthPassword, setShowAuthPassword] = useState(false); // oeil afficher/masquer le mot de passe
   const [authDisplayName, setAuthDisplayName] = useState('');
@@ -508,7 +516,7 @@ export default function App() {
       // Un gérant rejoint le restaurant du super admin via son e-mail.
       const ownerEmail = selectedRole === 'gerant' ? (authOwnerEmail.trim() || undefined) : undefined;
       // Créer un Super Admin exige un e-mail d'autorisation (vérifié aussi côté serveur).
-      const validationEmail = selectedRole === 'super_admin' ? authValidationEmail.trim() : undefined;
+      const validationEmail = selectedRole === 'super_admin' && !firstAccountOpen ? authValidationEmail.trim() : undefined;
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1856,7 +1864,7 @@ export default function App() {
                           >
                             <span className="text-[11px] font-bold">Super Admin</span>
                             <span className="text-[8px] text-slate-400 mt-0.5 leading-normal">
-                              Accès complet, finances, audits de méritocratie.
+                              Accès complet : finances, paramètres, utilisateurs.
                             </span>
                           </button>
                           <button
@@ -1877,7 +1885,13 @@ export default function App() {
                       </div>
                     )}
 
-                    {isRegisterMode && selectedRole === 'super_admin' && (
+                    {isRegisterMode && selectedRole === 'super_admin' && firstAccountOpen && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-left text-[10px] text-emerald-800 leading-normal">
+                        <b>Premier compte de ce restaurant :</b> il sera le Super Admin (accès complet). Vous pourrez ensuite créer les comptes de votre équipe dans l'onglet « Utilisateurs ».
+                      </div>
+                    )}
+
+                    {isRegisterMode && selectedRole === 'super_admin' && !firstAccountOpen && (
                       <div className="text-left">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                           E-mail de validation *

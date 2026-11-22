@@ -12,6 +12,7 @@ import {
   getOrCreateUser,
   getUserByUid,
   getUserByEmail,
+  countSuperAdmins,
   createUserWithPassword,
   getWorkspaceUsers,
   updateUserById,
@@ -195,6 +196,20 @@ async function startServer() {
   });
 
   // API Route: Register (création de compte avec e-mail + mot de passe, stocké dans PostgreSQL)
+  // Application de bureau (PostgreSQL embarqué) sans aucun Super Admin : le 1er compte est libre.
+  async function isFirstAccountOpen() {
+    return process.env.EMBEDDED_PG === 'true' && (await countSuperAdmins()) === 0;
+  }
+
+  // Public : indique à la page de connexion si l'e-mail de validation est requis pour le 1er compte.
+  app.get('/api/auth/setup-status', async (_req, res) => {
+    try {
+      res.json({ firstAccountOpen: await isFirstAccountOpen() });
+    } catch (error: any) {
+      res.json({ firstAccountOpen: false });
+    }
+  });
+
   app.post('/api/auth/register', async (req, res) => {
     try {
       const { email, password, displayName, role, ownerEmail, validationEmail } = req.body || {};
@@ -209,7 +224,9 @@ async function startServer() {
       // l'e-mail d'autorisation (configurable via SUPER_ADMIN_VALIDATION_EMAIL sur le serveur).
       // Rôle absent = super_admin (valeur par défaut du schéma), donc protégé aussi.
       const effectiveRole = role || 'super_admin';
-      if (effectiveRole === 'super_admin') {
+      // Exception : application de bureau, tout premier compte Super Admin de ce PC (le client
+      // qui vient d'installer RestoPilote). La licence protège déjà le produit.
+      if (effectiveRole === 'super_admin' && !(await isFirstAccountOpen())) {
         const authorizedEmail = (process.env.SUPER_ADMIN_VALIDATION_EMAIL || 'hariniainasamuelandrianirina@gmail.com')
           .trim()
           .toLowerCase();

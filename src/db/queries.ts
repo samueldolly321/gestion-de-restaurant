@@ -115,6 +115,17 @@ export async function getUserByEmail(email: string) {
   }
 }
 
+// Nombre de comptes Super Admin (sert à autoriser la création du tout premier compte sur l'app de bureau).
+export async function countSuperAdmins() {
+  try {
+    const result = await db.select({ n: sql<number>`count(*)::int` }).from(users).where(eq(users.role, 'super_admin'));
+    return Number(result[0]?.n || 0);
+  } catch (error) {
+    handleDbError("Failed to count super admins", error);
+    return 0;
+  }
+}
+
 // Crée un utilisateur avec mot de passe (haché). Utilisé par /api/auth/register et l'onglet Utilisateurs.
 export async function createUserWithPassword(params: {
   email: string;
