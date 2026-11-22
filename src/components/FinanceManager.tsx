@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { DollarSign, Landmark, TrendingUp, Calendar, CreditCard, UserCheck, ArrowUpRight, BarChart3, AlertCircle } from 'lucide-react';
-import { Order, Personnel } from '../types.ts';
+import { Order, Personnel, Expense, Income } from '../types.ts';
 
 interface FinanceManagerProps {
   orders: Order[];
   personnel: Personnel[];
+  expenses: Expense[];
+  incomes: Income[];
   userRole: string; // 'super_admin' or 'gerant'
 }
 
-export default function FinanceManager({ orders, personnel, userRole }: FinanceManagerProps) {
+export default function FinanceManager({ orders, personnel, expenses, incomes, userRole }: FinanceManagerProps) {
   const [timeframe, setTimeframe] = useState<'daily' | 'monthly'>('monthly');
 
   // Format Ariary helper
@@ -51,14 +53,35 @@ export default function FinanceManager({ orders, personnel, userRole }: FinanceM
     // Total monthly payroll
     const totalMonthlyPayroll = personnel.reduce((sum, p) => sum + (p.salary || 0), 0);
 
+    // Entrées du mois = additions payées + rentrées manuelles (même calcul que le tableau de bord).
+    const monthlyOtherIncome = incomes
+      .filter((i) => (i.incomeDate || i.createdAt || '').slice(0, 7) === currentMonthStr)
+      .reduce((sum, i) => sum + (i.amount || 0), 0);
+    const monthlyRevenue = monthlyTurnover + monthlyOtherIncome;
+
+    // CA quotidien moyen = entrées du mois ÷ jours écoulés dans le mois (aujourd'hui inclus).
+    const daysElapsed = new Date().getDate();
+    const avgDailyRevenue = monthlyRevenue / daysElapsed;
+
+    // Bénéfice réel du mois = entrées − dépenses diverses (fournisseurs payés inclus) − salaires.
+    const monthlyMiscExpenses = expenses
+      .filter((e) => (e.expenseDate || e.createdAt || '').slice(0, 7) === currentMonthStr)
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
+    const monthlyProfit = monthlyRevenue - monthlyMiscExpenses - totalMonthlyPayroll;
+
     return {
       dailyTurnover,
       monthlyTurnover,
       dailyPaidOrdersCount,
       monthlyPaidOrdersCount,
-      totalMonthlyPayroll
+      totalMonthlyPayroll,
+      monthlyRevenue,
+      daysElapsed,
+      avgDailyRevenue,
+      monthlyMiscExpenses,
+      monthlyProfit,
     };
-  }, [orders, personnel]);
+  }, [orders, personnel, expenses, incomes]);
 
   // Check RBAC access to salaries
   const canAccessSalaries = userRole === 'super_admin';
@@ -211,16 +234,20 @@ export default function FinanceManager({ orders, personnel, userRole }: FinanceM
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Chiffre d'Affaire Quotidien Moyen</h5>
             <p className="text-xl font-display font-extrabold text-slate-800">
-              {formatAr(financialStats.dailyTurnover || 120000)}
+              {formatAr(financialStats.avgDailyRevenue)}
             </p>
-            <p className="text-[10px] text-slate-400 mt-1">Calculé sur les ventes de la journée en cours.</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Entrées du mois ({formatAr(financialStats.monthlyRevenue)}) ÷ {financialStats.daysElapsed} jour{financialStats.daysElapsed > 1 ? 's' : ''} écoulé{financialStats.daysElapsed > 1 ? 's' : ''}.
+            </p>
           </div>
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bénéfice Théorique Mensuel (35% marge brute)</h5>
-            <p className="text-xl font-display font-extrabold text-red-600">
-              {formatAr(financialStats.monthlyTurnover * 0.35)}
+          <div className={`p-4 rounded-2xl border ${financialStats.monthlyProfit >= 0 ? 'bg-emerald-50/60 border-emerald-100' : 'bg-rose-50/60 border-rose-200'}`}>
+            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bénéfice Réel du Mois</h5>
+            <p className={`text-xl font-display font-extrabold ${financialStats.monthlyProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {formatAr(financialStats.monthlyProfit)}
             </p>
-            <p className="text-[10px] text-slate-400 mt-1">Estimation basée sur un coût moyen matière de 65%.</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Entrées ({formatAr(financialStats.monthlyRevenue)}) − dépenses diverses ({formatAr(financialStats.monthlyMiscExpenses)}) − salaires ({canAccessSalaries ? formatAr(financialStats.totalMonthlyPayroll) : '•••'}).
+            </p>
           </div>
         </div>
       </div>

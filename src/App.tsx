@@ -2580,6 +2580,8 @@ export default function App() {
                 <FinanceManager
                   orders={orders}
                   personnel={personnel}
+                  expenses={expenses}
+                  incomes={incomes}
                   userRole={dbUser?.role || 'super_admin'}
                 />
               </motion.div>
