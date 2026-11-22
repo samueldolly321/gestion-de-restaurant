@@ -95,11 +95,13 @@ npm run desktop        # construit puis ouvre directement la fenêtre de l'appli
 
 ### Générer une clé pour un client
 1. Le client vous envoie le **code machine** affiché dans sa fenêtre d'activation.
-2. Sur VOTRE PC (dans le dossier du projet) :
+2. **Méthode simple (fenêtre)** : double-cliquez sur `licence-privee\Generateur-cle-RestoPilote.exe`, collez le code, tapez le nom du client, « Générer la clé », puis « Copier la clé ». (Recompiler : `scripts\generateur-cle\build.cmd`.)
+3. **Méthode terminal** (équivalente), sur VOTRE PC dans le dossier du projet :
    ```powershell
    node scripts/generer-cle.mjs E109-DF8C-946D-EFDF "Nom du restaurant"
    ```
-3. Envoyez-lui la clé affichée (`RP-XXXXXX-…`) : il la colle et clique sur « Activer ».
+4. Envoyez-lui la clé affichée (`RP-XXXXXX-…`) : il la colle et clique sur « Activer ».
+- Vérification **stricte** (depuis le 23/11/2026) : la clé doit être exactement « RP » + 120 caractères signés ; tout caractère ajouté, retiré ou modifié est refusé (seuls espaces, tirets et minuscules sont tolérés). Testé sur 9 840 variantes.
 - Chaque clé est notée dans `licence-privee/cles-emises.csv`.
 
 ### ⚠️ Clé privée : `licence-privee/cle-privee.pem`

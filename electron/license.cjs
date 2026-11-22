@@ -37,17 +37,23 @@ function base32Encode(buf) {
   if (bits > 0) out += B32[(value << (5 - bits)) & 31];
   return out;
 }
+// Décodage STRICT : refuse tout caractère hors alphabet et tout bit résiduel non nul
+// (sinon un caractère ajouté en fin de clé serait ignoré silencieusement).
 function base32Decode(str) {
   let bits = 0, value = 0;
   const out = [];
   for (const ch of str) {
     const idx = B32.indexOf(ch);
     if (idx < 0) throw new Error('caractère invalide');
-    value = (value << 5) | idx; bits += 5;
+    value = ((value << 5) | idx) & 0xffff; bits += 5;
     if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; }
   }
+  if (bits >= 5 || (value & ((1 << bits) - 1)) !== 0) throw new Error('longueur invalide');
   return Buffer.from(out);
 }
+
+// Nombre exact de caractères base32 d'une clé : (11 + 64) octets × 8 / 5 = 120.
+const KEY_B32_LENGTH = 120;
 
 // ---------- Code machine ----------
 function readMachineGuid() {
@@ -103,9 +109,15 @@ function signKey(machineCode, privateKeyPem, issuedAt = Date.now()) {
 // Vérifie une clé pour CE poste. Renvoie { ok, error?, issuedOn? }.
 function verifyKey(key, machine = machineBytes()) {
   try {
-    let s = String(key || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (s.startsWith(KEY_PREFIX)) s = s.slice(KEY_PREFIX.length);
-    const raw = base32Decode(s);
+    // Seules les différences de MISE EN FORME sont tolérées : majuscules/minuscules, espaces,
+    // retours à la ligne et tirets. Tout autre écart (caractère ajouté, retiré, modifié) = refus.
+    const s = String(key || '').toUpperCase().replace(/[\s-]/g, '');
+    if (!s.startsWith(KEY_PREFIX)) return { ok: false, error: 'Clé invalide : elle doit commencer par « RP- ».' };
+    const body = s.slice(KEY_PREFIX.length);
+    if (body.length !== KEY_B32_LENGTH || !/^[A-Z2-7]+$/.test(body)) {
+      return { ok: false, error: 'Clé invalide ou mal recopiée (caractère en trop, en moins ou incorrect).' };
+    }
+    const raw = base32Decode(body);
     if (raw.length !== 11 + 64) return { ok: false, error: 'Clé incomplète ou mal recopiée.' };
     const payload = raw.subarray(0, 11);
     const sig = raw.subarray(11);

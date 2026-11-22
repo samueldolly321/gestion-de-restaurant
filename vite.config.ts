@@ -16,7 +16,14 @@ export default defineConfig(() => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Dossiers/fichiers hors du code ignorés : un fichier verrouillé (générateur de clés en cours
+      // d'exécution, fichier temporaire « ~$… » de Word) faisait planter le serveur (EBUSY).
+      watch: process.env.DISABLE_HMR === 'true' ? null : {
+        ignored: [
+          '**/licence-privee/**', '**/fichier exe application/**', '**/release/**', '**/dist/**',
+          '**/*.docx', '**/~$*', '**/*.exe', '**/image/**', '**/drizzle/**',
+        ],
+      },
     },
   };
 });
