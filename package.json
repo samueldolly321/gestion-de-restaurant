@@ -44,7 +44,7 @@
       "!build/**",
       "!assets/**",
       "!chefsuite",
-      "!tutoriel.docx",
+      "!*.docx",
       "!metadata.json",
       "!render.yaml"
     ],
