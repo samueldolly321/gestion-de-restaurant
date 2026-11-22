@@ -20,6 +20,10 @@ interface OrdersManagerProps {
   clients: Client[];
   restaurantName?: string | null;
   restaurantLogoUrl?: string | null;
+  restaurantAddress?: string | null; // imprimés en en-tête de la facture
+  restaurantPhone?: string | null;
+  restaurantNif?: string | null;
+  restaurantStat?: string | null;
   onAddOrder: (formData: any) => Promise<void>;
   onEditOrder: (id: number, formData: any) => Promise<void>;
   onDeleteOrder: (id: number) => Promise<void>;
@@ -32,6 +36,10 @@ export default function OrdersManager({
   clients,
   restaurantName,
   restaurantLogoUrl,
+  restaurantAddress,
+  restaurantPhone,
+  restaurantNif,
+  restaurantStat,
   onAddOrder,
   onEditOrder,
   onDeleteOrder
@@ -259,6 +267,15 @@ export default function OrdersManager({
     const logoHtml = restaurantLogoUrl
       ? `<img class="logo" src="${restaurantLogoUrl}" alt="${resto.replace(/</g, '&lt;')}" />`
       : '';
+    // En-tête légal : adresse, téléphone, NIF, STAT (renseignés dans Paramètres ; lignes vides omises).
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const infoLines = [
+      restaurantAddress ? esc(restaurantAddress) : '',
+      restaurantPhone ? `Tél : ${esc(restaurantPhone)}` : '',
+      restaurantNif ? `NIF : ${esc(restaurantNif)}` : '',
+      restaurantStat ? `STAT : ${esc(restaurantStat)}` : '',
+    ].filter(Boolean);
+    const infoHtml = infoLines.length ? `<div class="info">${infoLines.join('<br/>')}</div>` : '';
     const rows = (order.items || []).map((it) => `
       <tr>
         <td class="l">${it.quantity}× ${(it.name || 'Article').replace(/</g, '&lt;')}</td>
@@ -276,7 +293,8 @@ export default function OrdersManager({
           filter: grayscale(1) contrast(1.15); -webkit-filter: grayscale(1) contrast(1.15);
           print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         h1 { font-size: 16px; text-align: center; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
-        .sub { text-align: center; font-size: 11px; margin: 3px 0 10px; }
+        .info { text-align: center; font-size: 10.5px; line-height: 1.35; margin-top: 4px; word-wrap: break-word; }
+        .sub { text-align: center; font-size: 11px; margin: 8px 0 10px; font-weight: bold; }
         hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         td { padding: 2px 0; vertical-align: top; }
@@ -286,6 +304,7 @@ export default function OrdersManager({
       </style></head><body>
       ${logoHtml}
       <h1>${resto.replace(/</g, '&lt;')}</h1>
+      ${infoHtml}
       <div class="sub">ADDITION — Reçu client</div>
       <hr/>
       <table>

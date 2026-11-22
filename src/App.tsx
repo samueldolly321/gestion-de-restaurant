@@ -1319,6 +1319,9 @@ export default function App() {
     restaurantLogoUrl: string | null;
     restaurantPhone?: string | null;
     restaurantAddress?: string | null;
+    managerName?: string | null;
+    restaurantNif?: string | null;
+    restaurantStat?: string | null;
     role: string;
   }) => {
     if (!token || !dbUser) return;
@@ -1347,6 +1350,9 @@ export default function App() {
         restaurantLogoUrl: updatedOwner.restaurantLogoUrl,
         restaurantPhone: updatedOwner.restaurantPhone,
         restaurantAddress: updatedOwner.restaurantAddress,
+        managerName: updatedOwner.managerName,
+        restaurantNif: updatedOwner.restaurantNif,
+        restaurantStat: updatedOwner.restaurantStat,
       } : prev);
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -2439,6 +2445,10 @@ export default function App() {
                   clients={clients}
                   restaurantName={dbUser?.restaurantName}
                   restaurantLogoUrl={dbUser?.restaurantLogoUrl}
+                  restaurantAddress={dbUser?.restaurantAddress}
+                  restaurantPhone={dbUser?.restaurantPhone}
+                  restaurantNif={dbUser?.restaurantNif}
+                  restaurantStat={dbUser?.restaurantStat}
                   onAddOrder={handleAddOrder}
                   onEditOrder={handleEditOrder}
                   onDeleteOrder={handleDeleteOrder}

@@ -15,7 +15,10 @@ export const users = pgTable('users', {
   restaurantSlogan: text('restaurant_slogan'), // slogan affiché sous le nom (modifiable dans Paramètres)
   restaurantLogoUrl: text('restaurant_logo_url'),
   restaurantPhone: text('restaurant_phone'), // Téléphone du restaurant (modifiable)
-  restaurantAddress: text('restaurant_address'), // Adresse du restaurant (modifiable)
+  restaurantAddress: text('restaurant_address'), // Adresse du restaurant (modifiable) — imprimée sur la facture
+  managerName: text('manager_name'), // Nom du gérant (Paramètres ; non imprimé sur la facture)
+  restaurantNif: text('restaurant_nif'), // NIF (numéro d'identification fiscale) — imprimé sur la facture
+  restaurantStat: text('restaurant_stat'), // N° STAT (statistique) — imprimé sur la facture
   role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
   allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
   openingDate: text('opening_date'), // Date d'ouverture (YYYY-MM-DD) — point de départ du calcul d'amortissement

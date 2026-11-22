@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2, KeyRound, SlidersHorizontal } from 'lucide-react';
+import { Settings, Shield, RefreshCw, Sparkles, Check, Phone, MapPin, AlertTriangle, Trash2, KeyRound, SlidersHorizontal, FileText, UserRound } from 'lucide-react';
 import { DbUser } from '../types.ts';
 import LicensePanel from './LicensePanel.tsx';
 
@@ -11,6 +11,9 @@ interface SettingsManagerProps {
     restaurantLogoUrl: string | null;
     restaurantPhone: string | null;
     restaurantAddress: string | null;
+    managerName: string | null;
+    restaurantNif: string | null;
+    restaurantStat: string | null;
     role: string;
   }) => Promise<void>;
   onResetFinancial?: (scope: 'financial' | 'all') => Promise<any>;
@@ -24,6 +27,9 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState(dbUser.restaurantLogoUrl || '');
   const [restaurantPhone, setRestaurantPhone] = useState(dbUser.restaurantPhone || '');
   const [restaurantAddress, setRestaurantAddress] = useState(dbUser.restaurantAddress || '');
+  const [managerName, setManagerName] = useState(dbUser.managerName || '');
+  const [restaurantNif, setRestaurantNif] = useState(dbUser.restaurantNif || '');
+  const [restaurantStat, setRestaurantStat] = useState(dbUser.restaurantStat || '');
   const [role, setRole] = useState(dbUser.role || 'super_admin');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -79,6 +85,9 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
         restaurantLogoUrl: restaurantLogoUrl || null,
         restaurantPhone: restaurantPhone || null,
         restaurantAddress: restaurantAddress || null,
+        managerName: managerName.trim() || null,
+        restaurantNif: restaurantNif.trim() || null,
+        restaurantStat: restaurantStat.trim() || null,
         role,
       });
       setSuccess(true);
@@ -206,6 +215,53 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
                   placeholder="Ex. Lot II M 45 Analakely, Antananarivo"
                 />
               </div>
+            </div>
+
+            {/* Informations légales : NIF / STAT imprimés sur la facture ; le gérant reste interne */}
+            <div className="p-4 bg-slate-50/60 border border-slate-200 rounded-2xl space-y-3">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-red-600" /> Informations légales
+              </p>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <UserRound className="w-3 h-3" /> Nom du gérant
+                </label>
+                <input
+                  type="text"
+                  value={managerName}
+                  onChange={(e) => setManagerName(e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  placeholder="Ex. Rakoto Jean"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">NIF</label>
+                  <input
+                    type="text"
+                    value={restaurantNif}
+                    onChange={(e) => setRestaurantNif(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                    placeholder="Ex. 4001234567"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">STAT</label>
+                  <input
+                    type="text"
+                    value={restaurantStat}
+                    onChange={(e) => setRestaurantStat(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                    placeholder="Ex. 56101 11 2024 0 01234"
+                  />
+                </div>
+              </div>
+              <p className="text-[9px] text-slate-400">
+                Imprimés en haut de la facture : nom, adresse, téléphone, NIF et STAT. Le nom du gérant n'est pas imprimé.
+              </p>
             </div>
 
             <div>

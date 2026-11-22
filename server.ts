@@ -164,6 +164,9 @@ async function startServer() {
         sessionUser.restaurantLogoUrl = owner.restaurantLogoUrl;
         sessionUser.restaurantPhone = owner.restaurantPhone;
         sessionUser.restaurantAddress = owner.restaurantAddress;
+        sessionUser.managerName = owner.managerName;
+        sessionUser.restaurantNif = owner.restaurantNif;
+        sessionUser.restaurantStat = owner.restaurantStat;
         sessionUser.openingDate = owner.openingDate;
       }
     }
@@ -1040,7 +1043,7 @@ async function startServer() {
   // --- CONFIG/SETTINGS ENDPOINTS ---
   app.put('/api/users/config', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, role } = req.body;
+      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, managerName, restaurantNif, restaurantStat, role } = req.body;
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
@@ -1057,6 +1060,9 @@ async function startServer() {
         restaurantLogoUrl,
         restaurantPhone: restaurantPhone !== undefined ? (restaurantPhone || null) : undefined,
         restaurantAddress: restaurantAddress !== undefined ? (restaurantAddress || null) : undefined,
+        managerName: managerName !== undefined ? (String(managerName || '').trim() || null) : undefined,
+        restaurantNif: restaurantNif !== undefined ? (String(restaurantNif || '').trim() || null) : undefined,
+        restaurantStat: restaurantStat !== undefined ? (String(restaurantStat || '').trim() || null) : undefined,
         role
       });
       res.json(updated);
