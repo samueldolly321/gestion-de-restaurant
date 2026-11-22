@@ -19,7 +19,7 @@ export const ASSIGNABLE_ROLES: AppRole[] = ['gerant', 'comptable', 'chef_caisse'
 export const TAB_IDS = [
   'dashboard', 'orders', 'menu', 'reservations', 'personnel', 'deliveries',
   'clients', 'calendar', 'stocks', 'assets', 'finance', 'incomes', 'expenses',
-  'ia', 'settings',
+  'amortization', 'ia', 'settings',
 ] as const;
 
 export type TabId = typeof TAB_IDS[number];
@@ -38,6 +38,7 @@ export const TAB_LABELS: Record<string, string> = {
   finance: 'Argent (Finances)',
   incomes: "Rentrées d'argent",
   expenses: 'Dépenses diverses',
+  amortization: 'Amortissement',
   ia: 'Analyses IA & Mérite',
   settings: 'Paramètres',
 };
@@ -48,7 +49,7 @@ const ALL_TABS: TabId[] = [...TAB_IDS];
 export const DEFAULT_ROLE_TABS: Record<AppRole, TabId[]> = {
   super_admin: ALL_TABS,
   gerant: ALL_TABS, // le gérant peut tout voir
-  comptable: ['dashboard', 'finance', 'incomes', 'expenses'],
+  comptable: ['dashboard', 'finance', 'incomes', 'expenses', 'amortization'],
   chef_caisse: ['orders', 'menu', 'reservations', 'deliveries', 'clients', 'calendar'],
   serveur: ['orders', 'menu', 'reservations', 'deliveries', 'clients', 'calendar'],
 };

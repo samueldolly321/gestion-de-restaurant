@@ -18,6 +18,8 @@ export const users = pgTable('users', {
   restaurantAddress: text('restaurant_address'), // Adresse du restaurant (modifiable)
   role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
   allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
+  initialInvestment: doublePrecision('initial_investment'), // Fond de base investi pour créer le restaurant (Ar) — onglet Amortissement
+  openingDate: text('opening_date'), // Date d'ouverture (YYYY-MM-DD) — point de départ du calcul d'amortissement
   ownerId: integer('owner_id'), // Si défini, le compte partage les données de cet utilisateur (le super admin propriétaire)
 });
 

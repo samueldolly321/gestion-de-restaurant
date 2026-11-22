@@ -161,6 +161,8 @@ async function startServer() {
         sessionUser.restaurantLogoUrl = owner.restaurantLogoUrl;
         sessionUser.restaurantPhone = owner.restaurantPhone;
         sessionUser.restaurantAddress = owner.restaurantAddress;
+        sessionUser.initialInvestment = owner.initialInvestment;
+        sessionUser.openingDate = owner.openingDate;
       }
     }
     return sessionUser;
@@ -1056,6 +1058,33 @@ async function startServer() {
         role
       });
       res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // API Route: Amortissement — fond de base investi + date d'ouverture (stockés sur le propriétaire des données).
+  // Réservé au super admin et au gérant. Le propriétaire est déduit de la session (jamais du body).
+  app.put('/api/investment', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const caller = req.user?.uid ? await getUserByUid(req.user.uid) : null;
+      if (!caller) return res.status(401).json({ error: 'Non authentifié.' });
+      if (caller.role !== 'super_admin' && caller.role !== 'gerant') {
+        return res.status(403).json({ error: 'Accès refusé : réservé au Super Admin et au Gérant.' });
+      }
+      const { initialInvestment, openingDate } = req.body || {};
+      const amount = (initialInvestment === null || initialInvestment === undefined || initialInvestment === '')
+        ? null : Number(initialInvestment);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        return res.status(400).json({ error: 'Montant du fond de base invalide.' });
+      }
+      const date = openingDate ? String(openingDate) : null;
+      if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "Date d'ouverture invalide (AAAA-MM-JJ)." });
+      }
+      const ownerId = caller.ownerId || caller.id;
+      const updated = await updateUserConfig(ownerId, { initialInvestment: amount, openingDate: date });
+      res.json({ initialInvestment: updated?.initialInvestment ?? null, openingDate: updated?.openingDate ?? null });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

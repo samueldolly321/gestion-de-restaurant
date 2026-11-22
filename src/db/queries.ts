@@ -77,6 +77,8 @@ export async function updateUserConfig(
     restaurantPhone?: string | null;
     restaurantAddress?: string | null;
     role?: string;
+    initialInvestment?: number | null;
+    openingDate?: string | null;
   }
 ) {
   try {

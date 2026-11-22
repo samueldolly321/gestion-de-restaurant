@@ -35,7 +35,8 @@ import {
   ShieldCheck,
   UserCog,
   Eye,
-  EyeOff
+  EyeOff,
+  PiggyBank
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ROLE_LABELS } from './lib/permissions.ts';
@@ -58,10 +59,11 @@ import DeliveriesManager from './components/DeliveriesManager.tsx';
 import CalendarManager from './components/CalendarManager.tsx';
 import AIManager from './components/AIManager.tsx';
 import AssetsManager from './components/AssetsManager.tsx';
+import AmortizationManager from './components/AmortizationManager.tsx';
 
 import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset } from './types.ts';
 
-type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets' | 'users';
+type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets' | 'amortization' | 'users';
 
 export default function App() {
   // Authentication states
@@ -1338,6 +1340,23 @@ export default function App() {
     }
   };
 
+  // --- AMORTISSEMENT : fond de base + date d'ouverture (stockés sur le propriétaire des données) ---
+  const handleSaveInvestment = async (data: { initialInvestment: number | null; openingDate: string | null }) => {
+    if (!token || !dbUser) return;
+    try {
+      const res = await fetch('/api/investment', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Impossible d'enregistrer le fond de base.");
+      setDbUser((prev) => prev ? { ...prev, initialInvestment: json.initialInvestment, openingDate: json.openingDate } : prev);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
   // Réinitialise les données de l'espace (super admin) puis recharge les données.
   // scope='financial' (défaut) = commandes/dépenses/rentrées ; scope='all' = toutes les données métier.
   const handleResetFinancial = async (scope: 'financial' | 'all' = 'financial') => {
@@ -2064,6 +2083,7 @@ export default function App() {
               { id: 'finance', label: 'Argent (Finances)', icon: Landmark, tint: 'bg-emerald-100 text-emerald-600' },
               { id: 'incomes', label: 'Rentrées d\'argent', icon: TrendingUp, tint: 'bg-green-100 text-green-600' },
               { id: 'expenses', label: 'Dépenses diverses', icon: Receipt, tint: 'bg-rose-100 text-rose-600' },
+              { id: 'amortization', label: 'Amortissement', icon: PiggyBank, tint: 'bg-emerald-100 text-emerald-700' },
               { id: 'ia', label: 'Analyses IA & Mérite', icon: Sparkles, tint: 'bg-violet-100 text-violet-600' },
               { id: 'users', label: 'Utilisateurs', icon: UserCog, tint: 'bg-red-100 text-red-700' },
               { id: 'settings', label: 'Paramètres', icon: Settings, tint: 'bg-slate-200 text-slate-600' },
@@ -2160,6 +2180,7 @@ export default function App() {
                   {activeTab === 'finance' && 'Rapports Financiers'}
                   {activeTab === 'incomes' && 'Rentrées d\'argent'}
                   {activeTab === 'expenses' && 'Dépenses diverses'}
+                  {activeTab === 'amortization' && 'Amortissement du fond de base'}
                   {activeTab === 'menu' && 'Carte du Chef'}
                   {activeTab === 'settings' && 'Configuration de l\'Établissement'}
                   {activeTab === 'users' && 'Utilisateurs & Accès'}
@@ -2177,6 +2198,7 @@ export default function App() {
                   {activeTab === 'finance' && 'Suivi de chiffre d\'affaires et de dépenses'}
                   {activeTab === 'incomes' && 'Recettes : additions payées (auto) + autres rentrées'}
                   {activeTab === 'expenses' && 'Loyer, charges et factures (photo incluse)'}
+                  {activeTab === 'amortization' && 'En combien de mois l\'investissement de départ sera remboursé'}
                   {activeTab === 'menu' && 'Plats, boissons et gestion des disponibilités'}
                   {activeTab === 'settings' && 'Paramètres généraux du restaurant'}
                   {activeTab === 'users' && 'Créer des comptes et gérer les accès par onglet (super admin)'}
@@ -2519,6 +2541,28 @@ export default function App() {
                   orders={orders}
                   personnel={personnel}
                   userRole={dbUser?.role || 'super_admin'}
+                />
+              </motion.div>
+            )}
+
+            {activeTab === 'amortization' && (
+              <motion.div
+                key="amortization-view"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+              >
+                <AmortizationManager
+                  orders={orders}
+                  expenses={expenses}
+                  incomes={incomes}
+                  personnel={personnel}
+                  assets={assets}
+                  initialInvestment={dbUser?.initialInvestment ?? null}
+                  openingDate={dbUser?.openingDate ?? null}
+                  canEdit={dbUser?.role === 'super_admin' || dbUser?.role === 'gerant'}
+                  onSave={handleSaveInvestment}
                 />
               </motion.div>
             )}

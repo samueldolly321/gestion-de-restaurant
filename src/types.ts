@@ -10,6 +10,8 @@ export interface DbUser {
   restaurantLogoUrl?: string | null;
   restaurantPhone?: string | null;
   restaurantAddress?: string | null;
+  initialInvestment?: number | null; // fond de base investi (Ar)
+  openingDate?: string | null; // date d'ouverture (YYYY-MM-DD)
   role: 'super_admin' | 'gerant' | 'comptable' | 'chef_caisse' | 'serveur' | string;
   allowedTabs?: string[]; // onglets accessibles (effectifs) renvoyés par le serveur
   ownerId?: number | null; // propriétaire du restaurant si compte rattaché (gérant)
