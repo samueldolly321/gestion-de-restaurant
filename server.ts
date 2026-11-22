@@ -76,6 +76,10 @@ import {
   createIncome,
   updateIncome,
   deleteIncome,
+  getInvestmentItems,
+  createInvestmentItem,
+  updateInvestmentItem,
+  deleteInvestmentItem,
   getSpecialEvents,
   createSpecialEvent,
   deleteSpecialEvent,
@@ -161,7 +165,6 @@ async function startServer() {
         sessionUser.restaurantLogoUrl = owner.restaurantLogoUrl;
         sessionUser.restaurantPhone = owner.restaurantPhone;
         sessionUser.restaurantAddress = owner.restaurantAddress;
-        sessionUser.initialInvestment = owner.initialInvestment;
         sessionUser.openingDate = owner.openingDate;
       }
     }
@@ -1063,28 +1066,111 @@ async function startServer() {
     }
   });
 
-  // API Route: Amortissement — fond de base investi + date d'ouverture (stockés sur le propriétaire des données).
-  // Réservé au super admin et au gérant. Le propriétaire est déduit de la session (jamais du body).
-  app.put('/api/investment', requireAuth, async (req: AuthRequest, res) => {
+  // --- AMORTISSEMENT : fond de base (postes d'investissement) + date d'ouverture ---
+  // Le propriétaire des données est déduit de la session (jamais du body).
+  // Lecture : tout compte connecté ; écriture : Super Admin et Gérant uniquement.
+  const INVESTMENT_CATEGORIES = ['travaux', 'equipement', 'mobilier', 'stock_initial', 'caution_loyer', 'administratif', 'decoration', 'vehicule', 'tresorerie', 'autre'];
+
+  async function investmentCaller(req: AuthRequest, res: any, write: boolean) {
+    const caller = req.user?.uid ? await getUserByUid(req.user.uid) : null;
+    if (!caller) { res.status(401).json({ error: 'Non authentifié.' }); return null; }
+    if (write && caller.role !== 'super_admin' && caller.role !== 'gerant') {
+      res.status(403).json({ error: 'Accès refusé : réservé au Super Admin et au Gérant.' });
+      return null;
+    }
+    return { caller, ownerId: caller.ownerId || caller.id };
+  }
+
+  // Valide/normalise un poste (partial = modification : champs absents ignorés).
+  function parseInvestmentItem(body: any, partial: boolean): { data?: any; error?: string } {
+    const data: any = {};
+    if (!partial || body.label !== undefined) {
+      const label = String(body.label ?? '').trim();
+      if (!label) return { error: 'Le libellé est obligatoire.' };
+      data.label = label;
+    }
+    if (!partial || body.amount !== undefined) {
+      const amount = Number(body.amount);
+      if (body.amount === '' || body.amount === null || !Number.isFinite(amount) || amount < 0) return { error: 'Montant invalide.' };
+      data.amount = amount;
+    }
+    if (!partial || body.category !== undefined) {
+      data.category = INVESTMENT_CATEGORIES.includes(body.category) ? body.category : 'autre';
+    }
+    if (!partial || body.investDate !== undefined) {
+      const d = body.investDate ? String(body.investDate) : null;
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Date invalide (AAAA-MM-JJ).' };
+      data.investDate = d;
+    }
+    if (!partial || body.notes !== undefined) {
+      data.notes = body.notes ? String(body.notes) : null;
+    }
+    return { data };
+  }
+
+  app.put('/api/opening-date', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const caller = req.user?.uid ? await getUserByUid(req.user.uid) : null;
-      if (!caller) return res.status(401).json({ error: 'Non authentifié.' });
-      if (caller.role !== 'super_admin' && caller.role !== 'gerant') {
-        return res.status(403).json({ error: 'Accès refusé : réservé au Super Admin et au Gérant.' });
-      }
-      const { initialInvestment, openingDate } = req.body || {};
-      const amount = (initialInvestment === null || initialInvestment === undefined || initialInvestment === '')
-        ? null : Number(initialInvestment);
-      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        return res.status(400).json({ error: 'Montant du fond de base invalide.' });
-      }
-      const date = openingDate ? String(openingDate) : null;
+      const ctx = await investmentCaller(req, res, true);
+      if (!ctx) return;
+      const date = req.body?.openingDate ? String(req.body.openingDate) : null;
       if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: "Date d'ouverture invalide (AAAA-MM-JJ)." });
       }
-      const ownerId = caller.ownerId || caller.id;
-      const updated = await updateUserConfig(ownerId, { initialInvestment: amount, openingDate: date });
-      res.json({ initialInvestment: updated?.initialInvestment ?? null, openingDate: updated?.openingDate ?? null });
+      const updated = await updateUserConfig(ctx.ownerId, { openingDate: date });
+      res.json({ openingDate: updated?.openingDate ?? null });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/investment-items', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const ctx = await investmentCaller(req, res, false);
+      if (!ctx) return;
+      res.json((await getInvestmentItems(ctx.ownerId)) || []);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/investment-items', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const ctx = await investmentCaller(req, res, true);
+      if (!ctx) return;
+      const { data, error } = parseInvestmentItem(req.body || {}, false);
+      if (error) return res.status(400).json({ error });
+      const item = await createInvestmentItem(ctx.ownerId, data);
+      io.to(String(ctx.ownerId)).emit('investment_item_created', item);
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/investment-items/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const ctx = await investmentCaller(req, res, true);
+      if (!ctx) return;
+      const { data, error } = parseInvestmentItem(req.body || {}, true);
+      if (error) return res.status(400).json({ error });
+      const updated = await updateInvestmentItem(parseInt(req.params.id), ctx.ownerId, data);
+      if (!updated) return res.status(404).json({ error: 'Poste introuvable.' });
+      io.to(String(ctx.ownerId)).emit('investment_item_updated', updated);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/investment-items/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const ctx = await investmentCaller(req, res, true);
+      if (!ctx) return;
+      const id = parseInt(req.params.id);
+      const deleted = await deleteInvestmentItem(id, ctx.ownerId);
+      if (!deleted) return res.status(404).json({ error: 'Poste introuvable.' });
+      io.to(String(ctx.ownerId)).emit('investment_item_deleted', { id });
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

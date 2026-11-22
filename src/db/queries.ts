@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { db } from './index.ts';
-import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets } from './schema.ts';
+import { users, clients, personnel, menuItems, orders, orderItems, notifications, reservations, suppliers, supplierOrders, supplierOrderItems, supplierProducts, stocks, stockMovements, expenses, recurringExpenses, incomes, deliveries, specialEvents, assets, investmentItems } from './schema.ts';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 
 // Helper to sanitize database errors and log them securely
@@ -77,7 +77,6 @@ export async function updateUserConfig(
     restaurantPhone?: string | null;
     restaurantAddress?: string | null;
     role?: string;
-    initialInvestment?: number | null;
     openingDate?: string | null;
   }
 ) {
@@ -241,6 +240,7 @@ export async function resetAllData(ownerId: number) {
     const notificationsCount = await del(notifications);
     const specialEventsCount = await del(specialEvents);
     const assetsCount = await del(assets);
+    const investmentItemsCount = await del(investmentItems);
 
     return {
       orders: ordersCount,
@@ -259,6 +259,7 @@ export async function resetAllData(ownerId: number) {
       incomes: incomesCount,
       recurringExpenses: recurringCount,
       assets: assetsCount,
+      investmentItems: investmentItemsCount,
       specialEvents: specialEventsCount,
       notifications: notificationsCount,
     };
@@ -1614,6 +1615,58 @@ export async function deleteIncome(incomeId: number, dbUserId: number) {
     return result[0];
   } catch (error) {
     handleDbError("Failed to delete income", error);
+  }
+}
+
+// --- INVESTMENT ITEMS CRUD (Fond de base — onglet Amortissement) ---
+
+export async function getInvestmentItems(dbUserId: number) {
+  try {
+    return await db.select()
+      .from(investmentItems)
+      .where(eq(investmentItems.userId, dbUserId))
+      .orderBy(desc(investmentItems.createdAt));
+  } catch (error) {
+    handleDbError("Failed to fetch investment items", error);
+  }
+}
+
+export async function createInvestmentItem(
+  dbUserId: number,
+  data: { label: string; category: string; amount: number; investDate: string | null; notes: string | null }
+) {
+  try {
+    const result = await db.insert(investmentItems).values({ userId: dbUserId, ...data }).returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to create investment item", error);
+  }
+}
+
+export async function updateInvestmentItem(
+  itemId: number,
+  dbUserId: number,
+  updates: { label?: string; category?: string; amount?: number; investDate?: string | null; notes?: string | null }
+) {
+  try {
+    const result = await db.update(investmentItems)
+      .set(updates)
+      .where(and(eq(investmentItems.id, itemId), eq(investmentItems.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to update investment item", error);
+  }
+}
+
+export async function deleteInvestmentItem(itemId: number, dbUserId: number) {
+  try {
+    const result = await db.delete(investmentItems)
+      .where(and(eq(investmentItems.id, itemId), eq(investmentItems.userId, dbUserId)))
+      .returning();
+    return result[0];
+  } catch (error) {
+    handleDbError("Failed to delete investment item", error);
   }
 }
 

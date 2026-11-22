@@ -1,5 +1,5 @@
 {
-  "id": "e02dd59d-ea08-4bb6-9fe7-6317fe6b4110",
+  "id": "37229eb9-bb2b-4da6-9515-f1f7cf544467",
   "prevId": "ac39ac7c-2a7b-4605-a7e1-9da4b762f701",
   "version": "7",
   "dialect": "postgresql",
@@ -488,6 +488,84 @@
         "incomes_user_id_users_id_fk": {
           "name": "incomes_user_id_users_id_fk",
           "tableFrom": "incomes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.investment_items": {
+      "name": "investment_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'autre'"
+        },
+        "amount": {
+          "name": "amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "invest_date": {
+          "name": "invest_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "investment_items_user_id_users_id_fk": {
+          "name": "investment_items_user_id_users_id_fk",
+          "tableFrom": "investment_items",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -2056,12 +2134,6 @@
         "allowed_tabs": {
           "name": "allowed_tabs",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "initial_investment": {
-          "name": "initial_investment",
-          "type": "double precision",
           "primaryKey": false,
           "notNull": false
         },

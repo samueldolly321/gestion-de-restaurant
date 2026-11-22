@@ -18,7 +18,6 @@ export const users = pgTable('users', {
   restaurantAddress: text('restaurant_address'), // Adresse du restaurant (modifiable)
   role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
   allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
-  initialInvestment: doublePrecision('initial_investment'), // Fond de base investi pour créer le restaurant (Ar) — onglet Amortissement
   openingDate: text('opening_date'), // Date d'ouverture (YYYY-MM-DD) — point de départ du calcul d'amortissement
   ownerId: integer('owner_id'), // Si défini, le compte partage les données de cet utilisateur (le super admin propriétaire)
 });
@@ -328,6 +327,20 @@ export const specialEvents = pgTable('special_events', {
   date: text('date').notNull(), // YYYY-MM-DD
   time: text('time'), // HH:MM
   category: text('category').notNull().default('theme'), // 'concert', 'theme', 'vip', 'fermeture', 'autre'
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Define the 'investment_items' table (Fond de base : postes d'investissement de départ — onglet Amortissement)
+export const investmentItems = pgTable('investment_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  label: text('label').notNull(), // libellé du poste (ex. « Travaux cuisine »)
+  category: text('category').notNull().default('autre'), // 'travaux', 'equipement', 'mobilier', 'stock_initial', 'caution_loyer', 'administratif', 'decoration', 'vehicule', 'tresorerie', 'autre'
+  amount: doublePrecision('amount').notNull().default(0.0),
+  investDate: text('invest_date'), // YYYY-MM-DD
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
 });

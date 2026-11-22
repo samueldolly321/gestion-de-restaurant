@@ -61,7 +61,7 @@ import AIManager from './components/AIManager.tsx';
 import AssetsManager from './components/AssetsManager.tsx';
 import AmortizationManager from './components/AmortizationManager.tsx';
 
-import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset } from './types.ts';
+import { DbUser, Client, Personnel, MenuItem, Order, Notification, Reservation, Stock, Supplier, SupplierOrder, SupplierProduct, Expense, RecurringExpense, Income, Delivery, StockMovement, SpecialEvent, Asset, InvestmentItem } from './types.ts';
 
 type TabType = 'dashboard' | 'orders' | 'clients' | 'reservations' | 'personnel' | 'stocks' | 'finance' | 'expenses' | 'incomes' | 'deliveries' | 'settings' | 'menu' | 'calendar' | 'ia' | 'assets' | 'amortization' | 'users';
 
@@ -101,6 +101,7 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [investmentItems, setInvestmentItems] = useState<InvestmentItem[]>([]);
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -365,6 +366,16 @@ export default function App() {
     socket.on('income_updated', (updI: Income) => {
       setIncomes((prev) => prev.map((i) => (i.id === updI.id ? updI : i)));
     });
+    // Fond de base (onglet Amortissement) en temps réel
+    socket.on('investment_item_created', (it: InvestmentItem) => {
+      setInvestmentItems((prev) => [it, ...prev.filter((x) => x.id !== it.id)]);
+    });
+    socket.on('investment_item_updated', (it: InvestmentItem) => {
+      setInvestmentItems((prev) => prev.map((x) => (x.id === it.id ? it : x)));
+    });
+    socket.on('investment_item_deleted', (data: { id: number }) => {
+      setInvestmentItems((prev) => prev.filter((x) => x.id !== data.id));
+    });
     socket.on('income_deleted', (data: { id: number }) => {
       setIncomes((prev) => prev.filter((i) => i.id !== data.id));
     });
@@ -474,6 +485,9 @@ export default function App() {
       if (specialEventsRes.ok) setSpecialEvents(await specialEventsRes.json());
       if (supplierProductsRes.ok) setSupplierProducts(await supplierProductsRes.json());
       if (assetsRes.ok) setAssets(await assetsRes.json());
+      // Fond de base (onglet Amortissement) — chargé à part : le propriétaire est déduit de la session.
+      const investRes = await fetch('/api/investment-items', { headers: { 'Authorization': `Bearer ${jwtToken}` } });
+      if (investRes.ok) setInvestmentItems(await investRes.json());
     } catch (err) {
       console.error('Failed to load workspace data:', err);
     } finally {
@@ -1340,21 +1354,47 @@ export default function App() {
     }
   };
 
-  // --- AMORTISSEMENT : fond de base + date d'ouverture (stockés sur le propriétaire des données) ---
-  const handleSaveInvestment = async (data: { initialInvestment: number | null; openingDate: string | null }) => {
-    if (!token || !dbUser) return;
+  // --- AMORTISSEMENT : postes du fond de base + date d'ouverture (propriétaire déduit de la session) ---
+  // Chaque mutateur renvoie true si OK (le formulaire ne se ferme qu'en cas de succès).
+  const investmentRequest = async (url: string, method: string, body?: any, fallbackMsg = 'Opération impossible.') => {
+    if (!token || !dbUser) return null;
     try {
-      const res = await fetch('/api/investment', {
-        method: 'PUT',
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(data),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Impossible d'enregistrer le fond de base.");
-      setDbUser((prev) => prev ? { ...prev, initialInvestment: json.initialInvestment, openingDate: json.openingDate } : prev);
+      if (!res.ok) throw new Error(json.error || fallbackMsg);
+      return json;
     } catch (err: any) {
       setErrorMsg(err.message);
+      return null;
     }
+  };
+
+  const handleSaveOpeningDate = async (openingDate: string | null) => {
+    const json = await investmentRequest('/api/opening-date', 'PUT', { openingDate }, "Impossible d'enregistrer la date d'ouverture.");
+    if (json) setDbUser((prev) => prev ? { ...prev, openingDate: json.openingDate } : prev);
+    return !!json;
+  };
+
+  const handleAddInvestmentItem = async (data: Partial<InvestmentItem>) => {
+    const item = await investmentRequest('/api/investment-items', 'POST', data, "Impossible d'ajouter le poste.");
+    if (item) setInvestmentItems((prev) => [item, ...prev.filter((x) => x.id !== item.id)]);
+    return !!item;
+  };
+
+  const handleEditInvestmentItem = async (id: number, data: Partial<InvestmentItem>) => {
+    const item = await investmentRequest(`/api/investment-items/${id}`, 'PUT', data, 'Impossible de modifier le poste.');
+    if (item) setInvestmentItems((prev) => prev.map((x) => (x.id === item.id ? item : x)));
+    return !!item;
+  };
+
+  const handleDeleteInvestmentItem = async (id: number) => {
+    const ok = await investmentRequest(`/api/investment-items/${id}`, 'DELETE', undefined, 'Impossible de supprimer le poste.');
+    if (ok) setInvestmentItems((prev) => prev.filter((x) => x.id !== id));
+    return !!ok;
   };
 
   // Réinitialise les données de l'espace (super admin) puis recharge les données.
@@ -2559,10 +2599,13 @@ export default function App() {
                   incomes={incomes}
                   personnel={personnel}
                   assets={assets}
-                  initialInvestment={dbUser?.initialInvestment ?? null}
+                  investmentItems={investmentItems}
                   openingDate={dbUser?.openingDate ?? null}
                   canEdit={dbUser?.role === 'super_admin' || dbUser?.role === 'gerant'}
-                  onSave={handleSaveInvestment}
+                  onSaveOpeningDate={handleSaveOpeningDate}
+                  onAddItem={handleAddInvestmentItem}
+                  onEditItem={handleEditInvestmentItem}
+                  onDeleteItem={handleDeleteInvestmentItem}
                 />
               </motion.div>
             )}

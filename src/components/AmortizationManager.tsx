@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { PiggyBank, Target, CalendarClock, TrendingUp, TrendingDown, Save, Info, CheckCircle2, AlertTriangle, Armchair } from 'lucide-react';
-import { Order, Expense, Income, Personnel, Asset } from '../types.ts';
+import { PiggyBank, Target, CalendarClock, TrendingUp, TrendingDown, Save, Info, CheckCircle2, AlertTriangle, Armchair, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Order, Expense, Income, Personnel, Asset, InvestmentItem } from '../types.ts';
 
 interface AmortizationManagerProps {
   orders: Order[];
@@ -8,13 +8,32 @@ interface AmortizationManagerProps {
   incomes: Income[];
   personnel: Personnel[];
   assets: Asset[];
-  initialInvestment: number | null;
+  investmentItems: InvestmentItem[];
   openingDate: string | null;
   canEdit: boolean; // super admin / gérant
-  onSave: (data: { initialInvestment: number | null; openingDate: string | null }) => Promise<void>;
+  onSaveOpeningDate: (openingDate: string | null) => Promise<boolean>;
+  onAddItem: (data: Partial<InvestmentItem>) => Promise<boolean>;
+  onEditItem: (id: number, data: Partial<InvestmentItem>) => Promise<boolean>;
+  onDeleteItem: (id: number) => Promise<boolean>;
 }
 
 type Basis = 'all' | 'last3' | 'manual';
+
+export const INVESTMENT_CATEGORY_LABELS: Record<string, string> = {
+  travaux: 'Travaux & aménagement',
+  equipement: 'Équipement de cuisine',
+  mobilier: 'Mobilier',
+  stock_initial: 'Stock initial',
+  caution_loyer: 'Caution & loyers d\'avance',
+  administratif: 'Frais administratifs & licences',
+  decoration: 'Décoration & enseigne',
+  vehicule: 'Véhicule',
+  tresorerie: 'Trésorerie de départ',
+  autre: 'Autre',
+};
+
+type ItemForm = { label: string; category: string; amount: string; investDate: string; notes: string };
+const EMPTY_FORM: ItemForm = { label: '', category: 'travaux', amount: '', investDate: '', notes: '' };
 
 const MONTH_NAMES = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
@@ -39,19 +58,55 @@ const addMonths = (key: string, n: number) => {
 };
 
 export default function AmortizationManager({
-  orders, expenses, incomes, personnel, assets, initialInvestment, openingDate, canEdit, onSave,
+  orders, expenses, incomes, personnel, assets, investmentItems, openingDate, canEdit,
+  onSaveOpeningDate, onAddItem, onEditItem, onDeleteItem,
 }: AmortizationManagerProps) {
-  const [investmentInput, setInvestmentInput] = useState(initialInvestment != null ? String(initialInvestment) : '');
   const [dateInput, setDateInput] = useState(openingDate || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [basis, setBasis] = useState<Basis>('all');
   const [manualProfit, setManualProfit] = useState('');
+  // Formulaire poste : null = fermé, 'new' = ajout, sinon id du poste modifié
+  const [editing, setEditing] = useState<null | 'new' | number>(null);
+  const [form, setForm] = useState<ItemForm>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
-  useEffect(() => { setInvestmentInput(initialInvestment != null ? String(initialInvestment) : ''); }, [initialInvestment]);
   useEffect(() => { setDateInput(openingDate || ''); }, [openingDate]);
 
-  const investment = initialInvestment || 0;
+  const investment = investmentItems.reduce((s, it) => s + (it.amount || 0), 0);
+  const sortedItems = useMemo(
+    () => [...investmentItems].sort((a, b) => (a.investDate || a.createdAt || '').localeCompare(b.investDate || b.createdAt || '')),
+    [investmentItems]
+  );
+  const byCategory = useMemo(() => {
+    const m: Record<string, number> = {};
+    investmentItems.forEach((it) => { m[it.category] = (m[it.category] || 0) + (it.amount || 0); });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [investmentItems]);
+
+  const openNew = (prefill?: Partial<ItemForm>) => {
+    setForm({ ...EMPTY_FORM, ...prefill });
+    setFormError(null);
+    setEditing('new');
+  };
+  const openEdit = (it: InvestmentItem) => {
+    setForm({ label: it.label, category: it.category, amount: String(it.amount), investDate: it.investDate || '', notes: it.notes || '' });
+    setFormError(null);
+    setEditing(it.id);
+  };
+  const submitItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.label.trim()) return setFormError('Le libellé est obligatoire.');
+    const amount = Number(form.amount);
+    if (form.amount.trim() === '' || !Number.isFinite(amount) || amount < 0) return setFormError('Montant invalide.');
+    const payload = { label: form.label.trim(), category: form.category, amount, investDate: form.investDate || null, notes: form.notes.trim() || null };
+    setSubmitting(true);
+    const ok = editing === 'new' ? await onAddItem(payload) : await onEditItem(editing as number, payload);
+    setSubmitting(false);
+    if (ok) setEditing(null);
+  };
   const assetsValue = assets.reduce((s, a) => s + (a.purchaseValue || 0) * (a.quantity || 1), 0);
 
   // --- Bénéfice net mois par mois depuis l'ouverture ---
@@ -122,18 +177,14 @@ export default function AmortizationManager({
     : monthsRemaining != null ? stats.monthsElapsed + monthsRemaining : null;
   const estimatedDate = monthsRemaining != null ? addMonths(stats.currentMonth, Math.ceil(monthsRemaining)) : null;
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveDate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    try {
-      await onSave({
-        initialInvestment: investmentInput.trim() === '' ? null : Number(investmentInput),
-        openingDate: dateInput || null,
-      });
+    const ok = await onSaveOpeningDate(dateInput || null);
+    setSaving(false);
+    if (ok) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -149,65 +200,192 @@ export default function AmortizationManager({
 
   return (
     <div className="space-y-6 text-left">
-      {/* Paramètres : fond de base + date d'ouverture */}
-      <form onSubmit={handleSave} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-3xs">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-600"><PiggyBank className="w-5 h-5" /></div>
-          <div>
-            <h3 className="font-display font-bold text-slate-900">Fond de base investi</h3>
-            <p className="text-xs text-slate-400">Montant de départ pour créer le restaurant (travaux, matériel, stock initial, caution…)</p>
+      {/* Fond de base : liste des postes d'investissement */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-3xs overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-600"><PiggyBank className="w-5 h-5" /></div>
+            <div>
+              <h3 className="font-display font-bold text-slate-900">Fond de base investi</h3>
+              <p className="text-xs text-slate-400">Détail de l'investissement de départ (travaux, équipement, stock initial, caution…)</p>
+            </div>
           </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-          <label className="block">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fond de base (Ar)</span>
-            <input
-              type="number" min="0" step="1" disabled={!canEdit}
-              value={investmentInput} onChange={(e) => setInvestmentInput(e.target.value)}
-              placeholder="ex. 50000000"
-              className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono disabled:bg-slate-50"
-            />
-          </label>
-          <label className="block">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date d'ouverture</span>
-            <input
-              type="date" disabled={!canEdit}
-              value={dateInput} onChange={(e) => setDateInput(e.target.value)}
-              className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm disabled:bg-slate-50"
-            />
-          </label>
-          {canEdit ? (
-            <button type="submit" disabled={saving}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-              {saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {saving ? 'Enregistrement…' : saved ? 'Enregistré' : 'Enregistrer'}
-            </button>
-          ) : (
-            <p className="text-xs text-slate-400">Seuls le Super Admin et le Gérant peuvent modifier ces valeurs.</p>
-          )}
-        </div>
-        {assetsValue > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <Armchair className="w-3.5 h-3.5 text-lime-600" />
-            Valeur des biens & matériel enregistrés : <span className="font-bold font-mono">{formatAr(assetsValue)}</span>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</p>
+              <p className="font-display font-black text-xl text-emerald-700">{formatAr(investment)}</p>
+            </div>
             {canEdit && (
-              <button type="button" onClick={() => setInvestmentInput(String(Math.round(assetsValue)))}
-                className="ml-1 px-2 py-0.5 rounded-lg bg-lime-50 border border-lime-100 text-lime-700 font-bold cursor-pointer">
-                Utiliser ce montant
+              <button type="button" onClick={() => openNew()}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center gap-2 cursor-pointer">
+                <Plus className="w-4 h-4" /> Ajouter un poste
               </button>
             )}
           </div>
+        </div>
+
+        {/* Formulaire ajout / modification */}
+        {editing !== null && (
+          <form onSubmit={submitItem} className="px-6 py-5 border-b border-slate-100 bg-emerald-50/40">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-sm text-slate-800">{editing === 'new' ? 'Nouveau poste' : 'Modifier le poste'}</h4>
+              <button type="button" onClick={() => setEditing(null)} className="p-1 rounded-lg hover:bg-slate-100 cursor-pointer" aria-label="Fermer">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <label className="block md:col-span-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Libellé *</span>
+                <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} autoFocus
+                  placeholder="ex. Travaux de la cuisine"
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white" />
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Catégorie</span>
+                <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white">
+                  {Object.entries(INVESTMENT_CATEGORY_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Montant (Ar) *</span>
+                <input type="number" min="0" step="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="ex. 12000000"
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono bg-white" />
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date</span>
+                <input type="date" value={form.investDate} onChange={(e) => setForm({ ...form, investDate: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white" />
+              </label>
+              <label className="block md:col-span-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Notes</span>
+                <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Fournisseur, n° de facture, détail…"
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white" />
+              </label>
+            </div>
+            {formError && <p className="mt-2 text-xs font-semibold text-rose-600">{formError}</p>}
+            <div className="mt-4 flex gap-2 justify-end">
+              <button type="button" onClick={() => setEditing(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 cursor-pointer">Annuler</button>
+              <button type="submit" disabled={submitting}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60">
+                <Save className="w-4 h-4" /> {submitting ? 'Enregistrement…' : editing === 'new' ? 'Ajouter' : 'Enregistrer'}
+              </button>
+            </div>
+          </form>
         )}
-        {!openingDate && (
-          <p className="mt-3 text-[11px] text-slate-400 flex items-center gap-1.5">
-            <Info className="w-3.5 h-3.5" /> Sans date d'ouverture, le calcul démarre au mois de la plus ancienne donnée financière.
+
+        {/* Liste des postes */}
+        {sortedItems.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">
+            Aucun poste pour l'instant.{canEdit ? ' Cliquez sur « Ajouter un poste » pour détailler votre fond de base.' : ''}
           </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  <th className="py-3 px-6">Poste</th>
+                  <th className="py-3 px-6">Catégorie</th>
+                  <th className="py-3 px-6">Date</th>
+                  <th className="py-3 px-6 text-right">Montant</th>
+                  <th className="py-3 px-6 text-right">Part</th>
+                  {canEdit && <th className="py-3 px-6 text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {sortedItems.map((it) => (
+                  <tr key={it.id} className="hover:bg-slate-50/60 text-xs">
+                    <td className="py-3 px-6">
+                      <p className="font-bold text-slate-800">{it.label}</p>
+                      {it.notes && <p className="text-[11px] text-slate-400 mt-0.5">{it.notes}</p>}
+                    </td>
+                    <td className="py-3 px-6 text-slate-500">{INVESTMENT_CATEGORY_LABELS[it.category] || it.category}</td>
+                    <td className="py-3 px-6 font-mono text-slate-400">{it.investDate ? it.investDate.split('-').reverse().join('/') : '—'}</td>
+                    <td className="py-3 px-6 text-right font-mono font-bold text-slate-900">{formatAr(it.amount)}</td>
+                    <td className="py-3 px-6 text-right font-mono text-slate-400">{investment > 0 ? ((it.amount / investment) * 100).toFixed(1) : '0.0'} %</td>
+                    {canEdit && (
+                      <td className="py-3 px-6 text-right whitespace-nowrap">
+                        {confirmDeleteId === it.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-[11px] text-rose-600 font-semibold mr-1">Supprimer ?</span>
+                            <button type="button" onClick={async () => { await onDeleteItem(it.id); setConfirmDeleteId(null); }}
+                              className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer">Oui</button>
+                            <button type="button" onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-1 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 cursor-pointer">Non</button>
+                          </span>
+                        ) : (
+                          <span className="inline-flex gap-1">
+                            <button type="button" onClick={() => openEdit(it)} title="Modifier"
+                              className="p-1.5 rounded-lg hover:bg-indigo-50 text-indigo-600 cursor-pointer"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button type="button" onClick={() => setConfirmDeleteId(it.id)} title="Supprimer"
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+              {byCategory.length > 1 && (
+                <tfoot>
+                  <tr className="bg-slate-50/60 border-t border-slate-100">
+                    <td colSpan={canEdit ? 6 : 5} className="py-3 px-6">
+                      <div className="flex flex-wrap gap-2">
+                        {byCategory.map(([cat, total]) => (
+                          <span key={cat} className="px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-[11px] text-slate-600">
+                            {INVESTMENT_CATEGORY_LABELS[cat] || cat} : <b className="font-mono">{formatAr(total)}</b>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         )}
+
+        {canEdit && assetsValue > 0 && (
+          <div className="px-6 py-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <Armchair className="w-3.5 h-3.5 text-lime-600" />
+            Biens & matériel enregistrés : <span className="font-bold font-mono">{formatAr(assetsValue)}</span>
+            <button type="button" onClick={() => openNew({ label: 'Biens & matériel', category: 'equipement', amount: String(Math.round(assetsValue)) })}
+              className="ml-1 px-2 py-0.5 rounded-lg bg-lime-50 border border-lime-100 text-lime-700 font-bold cursor-pointer">
+              Ajouter comme poste
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Date d'ouverture */}
+      <form onSubmit={handleSaveDate} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-3xs flex flex-wrap items-end gap-4">
+        <label className="block">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date d'ouverture du restaurant</span>
+          <input type="date" disabled={!canEdit} value={dateInput} onChange={(e) => setDateInput(e.target.value)}
+            className="mt-1 block px-3 py-2 rounded-xl border border-slate-200 text-sm disabled:bg-slate-50" />
+        </label>
+        {canEdit && (
+          <button type="submit" disabled={saving}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60">
+            {saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Enregistrement…' : saved ? 'Enregistré' : 'Enregistrer la date'}
+          </button>
+        )}
+        <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-1 min-w-[220px]">
+          <Info className="w-3.5 h-3.5 shrink-0" />
+          {openingDate
+            ? 'Le bénéfice est cumulé à partir de ce mois-ci.'
+            : "Sans date d'ouverture, le calcul démarre au mois de la plus ancienne donnée financière."}
+          {!canEdit && ' Seuls le Super Admin et le Gérant peuvent modifier le fond de base.'}
+        </p>
       </form>
 
       {investment <= 0 ? (
         <div className="bg-white rounded-3xl p-10 border border-slate-100 text-center text-sm text-slate-400">
-          Renseignez le fond de base investi pour calculer en combien de mois il sera amorti.
+          Ajoutez les postes de votre fond de base pour calculer en combien de mois il sera amorti.
         </div>
       ) : (
         <>
