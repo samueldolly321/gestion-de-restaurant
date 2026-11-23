@@ -14,6 +14,7 @@ export interface DbUser {
   restaurantNif?: string | null; // NIF — imprimé sur la facture
   restaurantStat?: string | null; // STAT — imprimé sur la facture
   ticketFormat?: '58mm' | '80mm' | 'A4' | string | null; // format d'impression de l'addition
+  defaultTaxRate?: number; // TVA par défaut (%) des commandes et achats (prix saisis TTC)
   openingDate?: string | null; // date d'ouverture (YYYY-MM-DD)
   role: 'super_admin' | 'gerant' | 'comptable' | 'chef_caisse' | 'serveur' | string;
   allowedTabs?: string[]; // onglets accessibles (effectifs) renvoyés par le serveur
@@ -27,6 +28,7 @@ export interface Client {
   name: string;
   email: string | null;
   phone: string | null;
+  address?: string | null; // adresse (facture / livraison)
   loyaltyPoints: number;
   notes: string | null;
   createdAt: string;
@@ -109,6 +111,8 @@ export interface Order {
   clientId?: number | null; // client (fidélité) ayant passé la commande
   reference?: string | null; // référence lisible (ex. « 15-04 »)
   deliveryFee?: number; // frais de livraison (commande à livrer)
+  deliveryAddress?: string | null; // adresse de livraison (client de passage)
+  deliveryPhone?: string | null; // téléphone (client de passage)
   items?: OrderItem[]; // lignes de commande (plats/boissons), addition = somme des lignes
   createdAt: string;
 }
@@ -160,6 +164,7 @@ export interface SupplierOrder {
   supplierId: number;
   label: string; // résumé (ex. « Calmar +2 article(s) ») — dérivé des lignes
   amount: number; // total = somme des lignes
+  taxRate?: number; // TVA (%) incluse dans les prix TTC — affichage HT / TVA
   items: SupplierOrderItem[]; // lignes de la commande (modèle multi-articles)
   orderDate: string | null; // YYYY-MM-DD
   paymentStatus: 'paye' | 'en_attente' | 'non_paye' | string;

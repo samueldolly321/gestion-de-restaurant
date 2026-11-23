@@ -1310,6 +1310,7 @@ export default function App() {
     restaurantNif?: string | null;
     restaurantStat?: string | null;
     ticketFormat?: string | null;
+    defaultTaxRate?: number;
     role: string;
   }) => {
     if (!token || !dbUser) return;
@@ -1342,6 +1343,7 @@ export default function App() {
         restaurantNif: updatedOwner.restaurantNif,
         restaurantStat: updatedOwner.restaurantStat,
         ticketFormat: updatedOwner.ticketFormat,
+        defaultTaxRate: updatedOwner.defaultTaxRate,
       } : prev);
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -2380,6 +2382,7 @@ export default function App() {
                   restaurantNif={dbUser?.restaurantNif}
                   restaurantStat={dbUser?.restaurantStat}
                   ticketFormat={dbUser?.ticketFormat}
+                  defaultTaxRate={dbUser?.defaultTaxRate ?? 20}
                   onAddOrder={handleAddOrder}
                   onEditOrder={handleEditOrder}
                   onDeleteOrder={handleDeleteOrder}
@@ -2475,6 +2478,7 @@ export default function App() {
                   stockMovements={stockMovements}
                   supplierOrders={supplierOrders}
                   supplierProducts={supplierProducts}
+                  defaultTaxRate={dbUser?.defaultTaxRate ?? 20}
                   onAddStock={handleAddStock}
                   onEditStock={handleEditStock}
                   onDeleteStock={handleDeleteStock}

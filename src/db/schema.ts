@@ -20,6 +20,7 @@ export const users = pgTable('users', {
   restaurantNif: text('restaurant_nif'), // NIF (numéro d'identification fiscale) — imprimé sur la facture
   restaurantStat: text('restaurant_stat'), // N° STAT (statistique) — imprimé sur la facture
   ticketFormat: text('ticket_format').default('80mm'), // Format d'impression de l'addition : '58mm' | '80mm' | 'A4'
+  defaultTaxRate: doublePrecision('default_tax_rate').notNull().default(20.0), // TVA par défaut (%) des commandes et achats — prix saisis TTC
   role: text('role').notNull().default('super_admin'), // 'super_admin', 'gerant', 'comptable', 'chef_caisse', 'serveur'
   allowedTabs: jsonb('allowed_tabs').$type<string[]>(), // Onglets visibles (null = défaut du rôle). Personnalisable par le super admin.
   openingDate: text('opening_date'), // Date d'ouverture (YYYY-MM-DD) — point de départ du calcul d'amortissement
@@ -35,6 +36,7 @@ export const clients = pgTable('clients', {
   name: text('name').notNull(),
   email: text('email'),
   phone: text('phone'),
+  address: text('address'), // adresse (reprise automatiquement sur la facture / livraison)
   loyaltyPoints: integer('loyalty_points').notNull().default(0),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
@@ -111,6 +113,8 @@ export const orders = pgTable('orders', {
   clientId: integer('client_id').references(() => clients.id, { onDelete: 'set null' }), // client (fidélité) ayant passé la commande
   reference: text('reference'), // référence lisible auto (ex. « 15-04 » = 4e commande du 15)
   deliveryFee: doublePrecision('delivery_fee').notNull().default(0.0), // frais de livraison (commande à livrer)
+  deliveryAddress: text('delivery_address'), // adresse de livraison (client de passage)
+  deliveryPhone: text('delivery_phone'), // téléphone du client de passage
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -174,6 +178,7 @@ export const supplierOrders = pgTable('supplier_orders', {
   quantity: doublePrecision('quantity').notNull().default(1.0), // quantité commandée
   unitPrice: doublePrecision('unit_price').notNull().default(0.0), // prix unitaire (Ar)
   amount: doublePrecision('amount').notNull().default(0.0), // montant total = quantité × prix unitaire
+  taxRate: doublePrecision('tax_rate').notNull().default(20.0), // TVA (%) incluse dans les prix (TTC) — affichage HT / TVA
   orderDate: text('order_date'), // date de la commande (YYYY-MM-DD)
   paymentStatus: text('payment_status').notNull().default('en_attente'), // 'paye', 'en_attente', 'non_paye'
   invoiceNumber: text('invoice_number'),

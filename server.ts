@@ -169,6 +169,7 @@ async function startServer() {
         sessionUser.restaurantNif = owner.restaurantNif;
         sessionUser.restaurantStat = owner.restaurantStat;
         sessionUser.ticketFormat = owner.ticketFormat;
+        sessionUser.defaultTaxRate = owner.defaultTaxRate;
         sessionUser.openingDate = owner.openingDate;
       }
     }
@@ -442,7 +443,7 @@ async function startServer() {
 
   app.post('/api/clients', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, name, email, phone, loyaltyPoints, notes } = req.body;
+      const { dbUserId, name, email, phone, address, loyaltyPoints, notes } = req.body;
       if (!dbUserId || !name) {
         return res.status(400).json({ error: 'Missing dbUserId or name' });
       }
@@ -453,7 +454,8 @@ async function startServer() {
         email,
         phone,
         loyaltyPoints ? parseInt(loyaltyPoints) : 0,
-        notes
+        notes,
+        address
       );
 
       // Save notification to database
@@ -475,7 +477,7 @@ async function startServer() {
   app.put('/api/clients/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const clientId = parseInt(req.params.id);
-      const { dbUserId, name, email, phone, loyaltyPoints, notes } = req.body;
+      const { dbUserId, name, email, phone, address, loyaltyPoints, notes } = req.body;
 
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
@@ -485,6 +487,7 @@ async function startServer() {
         name,
         email,
         phone,
+        address: address !== undefined ? (address || null) : undefined,
         loyaltyPoints: loyaltyPoints ? parseInt(loyaltyPoints) : undefined,
         notes
       });
@@ -794,29 +797,42 @@ async function startServer() {
   // Crée automatiquement une livraison (stub) pour une commande « à livrer », si elle n'en a pas.
   // Le livreur et l'adresse seront complétés ensuite dans l'onglet Livraisons ; la commande est
   // tracée via son orderId (et sa référence).
+  // Taux de TVA reçu du client : nombre entre 0 et 100 (valeur invalide -> 0) ; undefined = inchangé.
+  function cleanTaxRate(v: any): number | undefined {
+    if (v === undefined) return undefined;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+  }
+
   async function ensureDeliveryForOrder(dbUserId: number, order: any) {
     if (!order || order.orderType !== 'a_livrer') return;
     const existing = await getDeliveries(dbUserId);
     if ((existing || []).some((d: any) => d.orderId === order.id)) return; // pas de doublon
-    let clientName = `Table ${order.tableNumber}`;
-    let clientPhone: string | null = null;
+    // Coordonnées : client enregistré → sa fiche ; client de passage → saisies sur la commande.
+    let clientName = `Client de passage (table ${order.tableNumber})`;
+    let clientPhone: string | null = order.deliveryPhone || null;
+    let address: string | null = order.deliveryAddress || null;
     if (order.clientId) {
       const clientsList = await getClients(dbUserId);
       const c = (clientsList || []).find((x: any) => x.id === order.clientId);
-      if (c) { clientName = c.name; clientPhone = c.phone || null; }
+      if (c) {
+        clientName = c.name;
+        clientPhone = c.phone || clientPhone;
+        address = c.address || address;
+      }
     }
     const today = new Date().toISOString().split('T')[0];
     const deliv = await createDelivery(
-      dbUserId, clientName, 'À renseigner', clientPhone, today, null,
+      dbUserId, clientName, address || 'À renseigner', clientPhone, today, null,
       order.id, null, 'en_preparation',
-      `Réf. commande ${order.reference || order.id} — adresse & livreur à compléter`, null
+      `Réf. commande ${order.reference || order.id} — ${address ? 'livreur à attribuer' : 'adresse & livreur à compléter'}`, null
     );
     io.to(String(dbUserId)).emit('delivery_created', deliv);
   }
 
   app.post('/api/orders', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee } = req.body;
+      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee, deliveryAddress, deliveryPhone } = req.body;
       if (!dbUserId || !tableNumber) {
         return res.status(400).json({ error: 'Missing dbUserId or tableNumber' });
       }
@@ -839,10 +855,12 @@ async function startServer() {
         Array.isArray(items) ? items : [],
         serverName || null,
         orderType || 'sur_place',
-        taxRate !== undefined ? parseFloat(taxRate) : 0,
+        cleanTaxRate(taxRate) ?? 0,
         clientIdNum,
         reference,
-        orderType === 'a_livrer' ? feeNum : 0
+        orderType === 'a_livrer' ? feeNum : 0,
+        orderType === 'a_livrer' ? (String(deliveryAddress || '').trim() || null) : null,
+        orderType === 'a_livrer' ? (String(deliveryPhone || '').trim() || null) : null
       );
 
       // Save notification to database
@@ -878,7 +896,7 @@ async function startServer() {
   app.put('/api/orders/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const orderId = parseInt(req.params.id);
-      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee } = req.body;
+      const { dbUserId, tableNumber, status, paymentMethod, items, serverName, orderType, taxRate, clientId, deliveryFee, deliveryAddress, deliveryPhone } = req.body;
 
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
@@ -894,9 +912,11 @@ async function startServer() {
         paymentMethod,
         serverName: serverName !== undefined ? (serverName || null) : undefined,
         orderType: orderType !== undefined ? orderType : undefined,
-        taxRate: taxRate !== undefined ? parseFloat(taxRate) : undefined,
+        taxRate: cleanTaxRate(taxRate),
         clientId: newClientId,
         deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : undefined,
+        deliveryAddress: deliveryAddress !== undefined ? (String(deliveryAddress || '').trim() || null) : undefined,
+        deliveryPhone: deliveryPhone !== undefined ? (String(deliveryPhone || '').trim() || null) : undefined,
         items: Array.isArray(items) ? items : undefined
       });
 
@@ -1061,7 +1081,7 @@ async function startServer() {
   // --- CONFIG/SETTINGS ENDPOINTS ---
   app.put('/api/users/config', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, managerName, restaurantNif, restaurantStat, ticketFormat, role } = req.body;
+      const { dbUserId, restaurantName, restaurantSlogan, restaurantLogoUrl, restaurantPhone, restaurantAddress, managerName, restaurantNif, restaurantStat, ticketFormat, defaultTaxRate, role } = req.body;
       if (!dbUserId) {
         return res.status(400).json({ error: 'Missing dbUserId' });
       }
@@ -1082,6 +1102,7 @@ async function startServer() {
         restaurantNif: restaurantNif !== undefined ? (String(restaurantNif || '').trim() || null) : undefined,
         restaurantStat: restaurantStat !== undefined ? (String(restaurantStat || '').trim() || null) : undefined,
         ticketFormat: ticketFormat !== undefined ? (['58mm', '80mm', 'A4'].includes(ticketFormat) ? ticketFormat : '80mm') : undefined,
+        defaultTaxRate: cleanTaxRate(defaultTaxRate),
         role
       });
       res.json(updated);
@@ -1503,7 +1524,7 @@ async function startServer() {
 
   app.post('/api/supplier-orders', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received } = req.body;
+      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received, taxRate } = req.body;
       if (!dbUserId || !supplierId || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Missing dbUserId, supplierId or items' });
       }
@@ -1520,7 +1541,8 @@ async function startServer() {
         invoiceNumber || null,
         invoiceImageUrl || null,
         note || null,
-        received === true || received === 'true'
+        received === true || received === 'true',
+        cleanTaxRate(taxRate) ?? 20
       );
       await syncSupplierOrderExpense(parseInt(dbUserId), newOrder);
       // Si créée déjà "reçue", on alimente immédiatement le stock des lignes liées.
@@ -1537,7 +1559,7 @@ async function startServer() {
   app.put('/api/supplier-orders/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const orderId = parseInt(req.params.id);
-      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received } = req.body;
+      const { dbUserId, supplierId, items, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received, taxRate } = req.body;
       if (!dbUserId) return res.status(400).json({ error: 'Missing dbUserId' });
 
       // Si de nouvelles lignes sont fournies, on les prépare en préservant le garde-fou
@@ -1571,6 +1593,7 @@ async function startServer() {
         invoiceImageUrl: invoiceImageUrl !== undefined ? (invoiceImageUrl || null) : undefined,
         note: note !== undefined ? (note || null) : undefined,
         received: received !== undefined ? (received === true || received === 'true') : undefined,
+        taxRate: cleanTaxRate(taxRate),
         items: preparedItems,
       });
       if (!updated) return res.status(404).json({ error: 'Supplier order not found or access denied' });

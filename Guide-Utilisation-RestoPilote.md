@@ -47,13 +47,20 @@ Clique **« Ouvrir une Commande »** :
 - **Serveur** (obligatoire, rôle « Serveur »).
 - **Client (fidélité)** — facultatif : rattache un client → **+1 point de fidélité** à la création.
 - **Plats & boissons** : ajoute les articles de la carte ; le total se calcule tout seul.
-- **TVA** : si un taux est mis, l'addition affiche HT / TVA / TTC.
+- **TVA** : **20 % par défaut** (réglable dans Paramètres), modifiable par commande (Aucune / 20 % / taux libre). Les prix de la carte sont **TTC** : la TVA ne s'ajoute pas, elle est **indiquée** (« dont TVA ») sous chaque plat, puis Total HT / TVA / TTC. La TVA est calculée sur le total à payer, **livraison comprise**.
 - **Frais de livraison** *(si « À livrer »)* : liste déroulante 3000 → 8000 Ar. Le total devient **Addition (plats) + Livraison**.
+- **Coordonnées de livraison** *(si « À livrer »)* :
+  - **Client de passage** : saisis l'**adresse** et le **numéro de téléphone** (obligatoires).
+  - **Client enregistré** : rien à saisir, son nom, téléphone et adresse sont repris de sa fiche (si la fiche n'a pas d'adresse ou de téléphone, un champ permet de le compléter).
+  - Ces informations sont **imprimées sur la facture** (bloc « LIVRAISON »).
 - La fenêtre **défile** ; les boutons « Enregistrer / Annuler » et la croix ✕ restent accessibles.
 
 ### Sur chaque carte de commande
 - **Référence auto** de la commande (ex. **Réf. 15-04** = 4ᵉ commande du 15).
-- Serveur, client (⭐), type, articles, total, TVA, moyen de paiement.
+- Serveur, client (⭐), type, **adresse 📍 et téléphone 📞** (commandes à livrer), articles, total, TVA, moyen de paiement.
+
+### L'addition imprimée
+En-tête du restaurant, table, commande, serveur, date, puis le bloc **client / livraison** (nom, tél., adresse), les plats (avec « dont TVA »), le sous-total plats, les **frais de livraison**, Total HT, TVA et **TOTAL TTC**.
 - **Encaisser l'Addition**, **Imprimer l'addition**, flèches pour changer de statut, modifier, supprimer.
 
 ### Recherche & affichage
@@ -61,7 +68,7 @@ Clique **« Ouvrir une Commande »** :
 - **Vue plein écran par statut** : clique le **titre** d'une colonne (En attente, En cuisine, Servi, Payé) → toutes ses commandes s'affichent en grand ; re-clique pour revenir au tableau.
 
 ### Commande « À livrer » → Livraison automatique
-Dès qu'une commande est **À livrer**, une **livraison est créée automatiquement** dans l'onglet Livraisons (tracée par la référence). Tu y complètes l'adresse et **attribues le livreur** ensuite.
+Dès qu'une commande est **À livrer**, une **livraison est créée automatiquement** dans l'onglet Livraisons (tracée par la référence), avec le **nom, l'adresse et le téléphone** du client déjà remplis. Il ne reste qu'à **attribuer le livreur**.
 
 ---
 
@@ -99,7 +106,7 @@ Tableau des livraisons : client, adresse, date/heure, **commande liée**, **livr
 
 ## 8. Clients
 
-- Carnet d'adresses : nom, e-mail, téléphone, notes.
+- Carnet d'adresses : nom, e-mail, téléphone, **adresse** (reprise automatiquement sur la facture et la livraison), notes.
 - **Points de fidélité** : affichés sur chaque fiche (« X Pts »). **+1 point à chaque commande** rattachée au client. Bouton « +10 » pour un bonus manuel.
 
 ---
@@ -131,7 +138,8 @@ Trois sous-onglets.
 Commande fournisseur **multi-articles** : une commande = **plusieurs lignes** (produits), une facture, un paiement.
 - Chaque ligne : produit, quantité, prix unitaire, article de stock lié.
   - **Catalogue** : en choisissant le fournisseur, ses produits s'affichent en **puces cliquables** qui pré-remplissent une ligne (prix modifiable).
-- **Total** = somme des lignes. **Facture** (n° + photo).
+- **Total** = somme des lignes (prix saisis **TTC**). **Facture** (n° + photo).
+- **TVA incluse** : 20 % par défaut (Paramètres), ou **« Sans TVA »** pour un fournisseur non assujetti. Le formulaire et la liste affichent Total HT / TVA / TTC et la TVA de chaque ligne ; le montant payé ne change pas.
 - **Payée** → crée une **dépense auto** (catégorie Ingrédients) du total.
 - **Reçue** (bouton global) → **alimente le stock** de chaque ligne liée (+ mouvement d'historique + coût unitaire). Idempotent (une fois par ligne).
 - **Corriger une quantité déjà reçue** : le stock **s'ajuste automatiquement** du delta (+ mouvement de correction).
@@ -179,7 +187,7 @@ Analyses générées par l'IA (Gemini). Nécessite une clé `GEMINI_API_KEY`. Sa
 
 ## 16. Paramètres — *super admin*
 
-Nom, **téléphone**, **adresse** du restaurant. En lecture seule pour le gérant.
+Nom, **téléphone**, **adresse** du restaurant, NIF, STAT, format d'impression de l'addition et **TVA par défaut (20 %)** appliquée aux nouvelles commandes et aux achats fournisseurs. En lecture seule pour le gérant.
 
 ---
 

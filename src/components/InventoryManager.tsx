@@ -31,6 +31,7 @@ interface InventoryManagerProps {
   onAddSupplierProduct: (data: any) => Promise<void>;
   onEditSupplierProduct: (id: number, data: any) => Promise<void>;
   onDeleteSupplierProduct: (id: number) => Promise<void>;
+  defaultTaxRate?: number; // TVA par défaut (%) des achats (Paramètres) — prix saisis TTC
 }
 
 export default function InventoryManager({
@@ -52,6 +53,7 @@ export default function InventoryManager({
   onAddSupplierProduct,
   onEditSupplierProduct,
   onDeleteSupplierProduct,
+  defaultTaxRate = 20,
 }: InventoryManagerProps) {
   const [activeSubTab, setActiveSubTab] = useState<'stocks' | 'suppliers' | 'orders'>('stocks');
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
@@ -107,6 +109,7 @@ export default function InventoryManager({
   const [orderInvoiceImageUrl, setOrderInvoiceImageUrl] = useState('');
   const [orderNote, setOrderNote] = useState('');
   const [orderReceived, setOrderReceived] = useState(false);
+  const [orderTaxRate, setOrderTaxRate] = useState(defaultTaxRate); // TVA (%) incluse dans les prix TTC
   const [orderSupplierFilter, setOrderSupplierFilter] = useState(''); // filtre historique par fournisseur
   const [stockDateFrom, setStockDateFrom] = useState(''); // filtre date d'ajout (stocks)
   const [stockDateTo, setStockDateTo] = useState('');
@@ -286,6 +289,7 @@ export default function InventoryManager({
     setOrderInvoiceImageUrl('');
     setOrderNote('');
     setOrderReceived(false);
+    setOrderTaxRate(defaultTaxRate);
     setIsOrderModalOpen(true);
   };
 
@@ -302,6 +306,7 @@ export default function InventoryManager({
     setOrderInvoiceImageUrl('');
     setOrderNote('');
     setOrderReceived(false);
+    setOrderTaxRate(defaultTaxRate);
     setActiveSubTab('orders');
     setIsOrderModalOpen(true);
   };
@@ -324,6 +329,7 @@ export default function InventoryManager({
     setOrderInvoiceImageUrl(o.invoiceImageUrl || '');
     setOrderNote(o.note || '');
     setOrderReceived(!!o.received);
+    setOrderTaxRate(o.taxRate ?? defaultTaxRate);
     setIsOrderModalOpen(true);
   };
 
@@ -344,6 +350,12 @@ export default function InventoryManager({
   };
   const removeOrderLine = (index: number) =>
     setOrderLines((lines) => (lines.length > 1 ? lines.filter((_, i) => i !== index) : lines));
+  // Ventilation d'un montant TTC : HT arrondi à l'Ariary, TVA = TTC − HT (HT + TVA = TTC exactement).
+  const taxBreakdown = (ttc: number, rate: number) => {
+    const r = Number(rate) || 0;
+    const ht = r > 0 ? Math.round(ttc / (1 + r / 100)) : ttc;
+    return { ht, tva: ttc - ht };
+  };
   const orderLinesTotal = orderLines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0);
 
   const handleOrderInvoiceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -376,6 +388,7 @@ export default function InventoryManager({
       invoiceImageUrl: orderInvoiceImageUrl || null,
       note: orderNote || null,
       received: orderReceived,
+      taxRate: Math.min(100, Math.max(0, Number(orderTaxRate) || 0)),
     };
     if (editingOrder) {
       await onEditSupplierOrder(editingOrder.id, payload);
@@ -874,7 +887,7 @@ export default function InventoryManager({
                           <th className="py-3 px-6">Fournisseur</th>
                           <th className="py-3 px-6">Commande</th>
                           <th className="py-3 px-6">Facture</th>
-                          <th className="py-3 px-6 text-right">Montant</th>
+                          <th className="py-3 px-6 text-right">Montant TTC</th>
                           <th className="py-3 px-6 text-center">Paiement</th>
                           <th className="py-3 px-6 text-center">Actions</th>
                         </tr>
@@ -913,6 +926,9 @@ export default function InventoryManager({
                             </td>
                             <td className="py-3.5 px-6 text-right font-mono font-black text-slate-900">
                               {formatAr(o.amount || 0)}
+                              {(o.taxRate || 0) > 0 && (
+                                <p className="text-[9px] font-semibold text-slate-400">dont TVA {o.taxRate}% : {formatAr(taxBreakdown(o.amount || 0, o.taxRate || 0).tva)}</p>
+                              )}
                             </td>
                             <td className="py-3.5 px-6 text-center">
                               <span className={`inline-block text-[9px] px-2 py-0.5 rounded-full border font-bold uppercase ${
@@ -955,7 +971,8 @@ export default function InventoryManager({
                                         <th className="py-1.5 px-3 text-left">Article</th>
                                         <th className="py-1.5 px-3 text-center">Qté</th>
                                         <th className="py-1.5 px-3 text-right">P.U.</th>
-                                        <th className="py-1.5 px-3 text-right">Total</th>
+                                        <th className="py-1.5 px-3 text-right">Total TTC</th>
+                                        <th className="py-1.5 px-3 text-right">dont TVA</th>
                                         <th className="py-1.5 px-3 text-center">Stock lié</th>
                                       </tr>
                                     </thead>
@@ -966,6 +983,7 @@ export default function InventoryManager({
                                           <td className="py-1.5 px-3 text-center font-mono">{it.quantity}</td>
                                           <td className="py-1.5 px-3 text-right font-mono">{formatAr(it.unitPrice || 0)}</td>
                                           <td className="py-1.5 px-3 text-right font-mono font-bold">{formatAr(it.amount || 0)}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono text-slate-500">{(o.taxRate || 0) > 0 ? formatAr(taxBreakdown(it.amount || 0, o.taxRate || 0).tva) : '—'}</td>
                                           <td className="py-1.5 px-3 text-center">
                                             {it.stockId != null ? (
                                               <span className="text-[9px] text-slate-600">{stocks.find((s) => s.id === it.stockId)?.itemName || `#${it.stockId}`}{it.stockApplied ? ' ✓' : ''}</span>
@@ -1442,7 +1460,7 @@ export default function InventoryManager({
                             )}
                           </div>
                         )}
-                        <div className="text-right text-[10px] text-slate-500 font-mono">Sous-total : <b className="text-slate-700">{formatAr(lineTotal)}</b></div>
+                        <div className="text-right text-[10px] text-slate-500 font-mono">Sous-total : <b className="text-slate-700">{formatAr(lineTotal)}</b>{orderTaxRate > 0 ? ` (dont TVA ${formatAr(taxBreakdown(lineTotal, orderTaxRate).tva)})` : ''}</div>
                       </div>
                     </div>
                   );
@@ -1452,10 +1470,54 @@ export default function InventoryManager({
                 </button>
               </div>
 
-              {/* Montant total calculé */}
-              <div className="flex items-center justify-between bg-red-50/60 border border-red-100 rounded-xl px-4 py-2.5">
-                <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Montant total (auto)</span>
-                <span className="text-base font-black text-red-600 font-mono">{formatAr(orderLinesTotal)}</span>
+              {/* TVA incluse dans les prix (prix fournisseurs saisis TTC) */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">TVA incluse (%)</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[0, 20].map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setOrderTaxRate(r)}
+                      className={`px-3 py-1.5 border rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        orderTaxRate === r ? 'border-red-500 bg-red-50 text-red-700 ring-1 ring-red-500/30' : 'border-slate-200 hover:bg-slate-50 text-slate-600 bg-white'
+                      }`}
+                    >
+                      {r === 0 ? 'Sans TVA' : `${r} %`}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={orderTaxRate}
+                    onChange={(e) => setOrderTaxRate(Number(e.target.value) || 0)}
+                    className="w-20 px-2.5 py-1.5 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono"
+                    title="Taux personnalisé"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 mt-1">Les prix saisis sont TTC ; choisissez « Sans TVA » pour un fournisseur non assujetti.</p>
+              </div>
+
+              {/* Montant total calculé (TTC) + ventilation HT / TVA */}
+              <div className="bg-red-50/60 border border-red-100 rounded-xl px-4 py-2.5 space-y-1">
+                {orderTaxRate > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                      <span>Total HT</span>
+                      <span className="font-mono">{formatAr(taxBreakdown(orderLinesTotal, orderTaxRate).ht)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                      <span>TVA ({orderTaxRate} %)</span>
+                      <span className="font-mono">{formatAr(taxBreakdown(orderLinesTotal, orderTaxRate).tva)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Montant total{orderTaxRate > 0 ? ' TTC' : ''} (auto)</span>
+                  <span className="text-base font-black text-red-600 font-mono">{formatAr(orderLinesTotal)}</span>
+                </div>
               </div>
 
               <div>

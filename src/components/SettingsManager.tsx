@@ -15,6 +15,7 @@ interface SettingsManagerProps {
     restaurantNif: string | null;
     restaurantStat: string | null;
     ticketFormat: string;
+    defaultTaxRate: number;
     role: string;
   }) => Promise<void>;
   onResetFinancial?: (scope: 'financial' | 'all') => Promise<any>;
@@ -32,6 +33,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
   const [restaurantNif, setRestaurantNif] = useState(dbUser.restaurantNif || '');
   const [restaurantStat, setRestaurantStat] = useState(dbUser.restaurantStat || '');
   const [ticketFormat, setTicketFormat] = useState<string>(dbUser.ticketFormat || '80mm');
+  const [defaultTaxRate, setDefaultTaxRate] = useState<number>(dbUser.defaultTaxRate ?? 20);
   const [role, setRole] = useState(dbUser.role || 'super_admin');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -91,6 +93,7 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
         restaurantNif: restaurantNif.trim() || null,
         restaurantStat: restaurantStat.trim() || null,
         ticketFormat,
+        defaultTaxRate: Math.min(100, Math.max(0, Number(defaultTaxRate) || 0)),
         role,
       });
       setSuccess(true);
@@ -293,6 +296,43 @@ export default function SettingsManager({ dbUser, onUpdateConfig, onResetFinanci
                 ))}
               </div>
               <p className="text-[9px] text-slate-400">Utilisé par « Imprimer l'addition ». Pensez à enregistrer la configuration.</p>
+            </div>
+
+            {/* TVA par défaut : prix saisis TTC, la TVA incluse est affichée (facture, achats) */}
+            <div className="p-4 bg-slate-50/60 border border-slate-200 rounded-2xl space-y-3">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                🧾 TVA par défaut (%)
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {[0, 20].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => setDefaultTaxRate(r)}
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
+                      defaultTaxRate === r ? 'border-red-500 bg-red-50 text-red-700 ring-1 ring-red-500/30' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    {r === 0 ? 'Aucune' : `${r} %`}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  disabled={!canEdit}
+                  value={defaultTaxRate}
+                  onChange={(e) => setDefaultTaxRate(Number(e.target.value) || 0)}
+                  className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none text-slate-800 font-mono disabled:opacity-60"
+                  title="Taux personnalisé"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400">
+                Appliquée automatiquement aux nouvelles commandes et aux achats fournisseurs (modifiable au cas par cas).
+                Les prix restent saisis TTC : la TVA incluse est indiquée sur la facture.
+              </p>
             </div>
 
             <div>

@@ -24,6 +24,7 @@ export default function ClientsManager({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [notes, setNotes] = useState('');
 
@@ -32,6 +33,7 @@ export default function ClientsManager({
     setName('');
     setEmail('');
     setPhone('');
+    setAddress('');
     setLoyaltyPoints(0);
     setNotes('');
     setIsOpen(true);
@@ -42,6 +44,7 @@ export default function ClientsManager({
     setName(client.name);
     setEmail(client.email || '');
     setPhone(client.phone || '');
+    setAddress(client.address || '');
     setLoyaltyPoints(client.loyaltyPoints);
     setNotes(client.notes || '');
     setIsOpen(true);
@@ -49,7 +52,7 @@ export default function ClientsManager({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { name, email, phone, loyaltyPoints, notes };
+    const payload = { name, email, phone, address, loyaltyPoints, notes };
     if (editingClient) {
       await onEditClient(editingClient.id, payload);
     } else {
@@ -127,6 +130,12 @@ export default function ClientsManager({
                     <p className="flex items-center gap-2">
                       <span>📞</span>
                       <span>{client.phone}</span>
+                    </p>
+                  )}
+                  {client.address && (
+                    <p className="flex items-center gap-2">
+                      <span>📍</span>
+                      <span className="truncate">{client.address}</span>
                     </p>
                   )}
                   {client.email && (
@@ -230,6 +239,17 @@ export default function ClientsManager({
                     className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800 font-mono"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Adresse (livraison)</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-slate-50/50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-red-500 outline-none transition-all placeholder:text-slate-400 text-slate-800"
+                  placeholder="Lot II A 45, Analakely, Antananarivo"
+                />
               </div>
 
               <div>

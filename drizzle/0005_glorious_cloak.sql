@@ -1,0 +1,2 @@
+ALTER TABLE "supplier_orders" ADD COLUMN "tax_rate" double precision DEFAULT 20 NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "default_tax_rate" double precision DEFAULT 20 NOT NULL;

@@ -80,6 +80,7 @@ export async function updateUserConfig(
     restaurantNif?: string | null;
     restaurantStat?: string | null;
     ticketFormat?: string | null;
+    defaultTaxRate?: number;
     role?: string;
     openingDate?: string | null;
   }
@@ -315,7 +316,8 @@ export async function createClient(
   email?: string,
   phone?: string,
   loyaltyPoints = 0,
-  notes?: string
+  notes?: string,
+  address?: string
 ) {
   try {
     const result = await db.insert(clients)
@@ -324,6 +326,7 @@ export async function createClient(
         name,
         email: email || null,
         phone: phone || null,
+        address: address || null,
         loyaltyPoints,
         notes: notes || null,
       })
@@ -341,6 +344,7 @@ export async function updateClient(
     name?: string;
     email?: string;
     phone?: string;
+    address?: string | null;
     loyaltyPoints?: number;
     notes?: string;
   }
@@ -614,14 +618,16 @@ export async function createOrder(
   taxRate = 0,
   clientId: number | null = null,
   reference: string | null = null,
-  deliveryFee = 0
+  deliveryFee = 0,
+  deliveryAddress: string | null = null,
+  deliveryPhone: string | null = null
 ) {
   try {
     // L'addition (plats) est recalculée côté serveur ; le total inclut les frais de livraison.
     const itemsSum = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
     const totalAmount = itemsSum + (deliveryFee || 0);
     const result = await db.insert(orders)
-      .values({ userId: dbUserId, tableNumber, status, totalAmount, paymentMethod, serverName, orderType, taxRate, clientId, reference, deliveryFee })
+      .values({ userId: dbUserId, tableNumber, status, totalAmount, paymentMethod, serverName, orderType, taxRate, clientId, reference, deliveryFee, deliveryAddress, deliveryPhone })
       .returning();
     const order = result[0];
     if (items.length > 0) {
@@ -652,6 +658,8 @@ export async function updateOrder(
     taxRate?: number;
     clientId?: number | null;
     deliveryFee?: number;
+    deliveryAddress?: string | null;
+    deliveryPhone?: string | null;
     items?: OrderItemInput[];
   }
 ) {
@@ -666,6 +674,8 @@ export async function updateOrder(
     if (updates.taxRate !== undefined) setFields.taxRate = updates.taxRate;
     if (updates.clientId !== undefined) setFields.clientId = updates.clientId;
     if (updates.deliveryFee !== undefined) setFields.deliveryFee = updates.deliveryFee;
+    if (updates.deliveryAddress !== undefined) setFields.deliveryAddress = updates.deliveryAddress;
+    if (updates.deliveryPhone !== undefined) setFields.deliveryPhone = updates.deliveryPhone;
     // Le total est recalculé si les lignes changent : addition (plats) + frais de livraison.
     if (updates.items !== undefined) {
       const itemsSum = updates.items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
@@ -966,14 +976,15 @@ export async function createSupplierOrder(
   invoiceNumber: string | null = null,
   invoiceImageUrl: string | null = null,
   note: string | null = null,
-  received = false
+  received = false,
+  taxRate = 20
 ) {
   try {
     return await db.transaction(async (tx) => {
       const inserted = await tx.insert(supplierOrders)
         .values({
           userId: dbUserId, supplierId, label: summarizeItems(items),
-          amount: 0, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received,
+          amount: 0, orderDate, paymentStatus, invoiceNumber, invoiceImageUrl, note, received, taxRate,
         })
         .returning();
       const order = inserted[0];
@@ -1004,6 +1015,7 @@ export async function updateSupplierOrder(
     note?: string | null;
     expenseId?: number | null;
     received?: boolean;
+    taxRate?: number;
     items?: SupplierOrderItemInput[];
   }
 ) {

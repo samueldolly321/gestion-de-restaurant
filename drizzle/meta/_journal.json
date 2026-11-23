@@ -29,6 +29,20 @@
       "when": 1795385189819,
       "tag": "0003_cool_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795429541661,
+      "tag": "0004_new_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795430891628,
+      "tag": "0005_glorious_cloak",
+      "breakpoints": true
     }
   ]
 }

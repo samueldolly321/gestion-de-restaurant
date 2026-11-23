@@ -25,6 +25,7 @@ interface OrdersManagerProps {
   restaurantNif?: string | null;
   restaurantStat?: string | null;
   ticketFormat?: string | null; // '58mm' | '80mm' | 'A4' (Paramètres)
+  defaultTaxRate?: number; // TVA par défaut (%) des nouvelles commandes (Paramètres)
   onAddOrder: (formData: any) => Promise<void>;
   onEditOrder: (id: number, formData: any) => Promise<void>;
   onDeleteOrder: (id: number) => Promise<void>;
@@ -42,6 +43,7 @@ export default function OrdersManager({
   restaurantNif,
   restaurantStat,
   ticketFormat,
+  defaultTaxRate = 20,
   onAddOrder,
   onEditOrder,
   onDeleteOrder
@@ -67,6 +69,11 @@ export default function OrdersManager({
   const [taxRate, setTaxRate] = useState(0); // taux de TVA en % (prix TTC)
   const [clientId, setClientId] = useState(''); // client fidélité rattaché ('' = client de passage)
   const [deliveryFee, setDeliveryFee] = useState(0); // frais de livraison (commande à livrer)
+  const [deliveryAddress, setDeliveryAddress] = useState(''); // adresse (client de passage)
+  const [deliveryPhone, setDeliveryPhone] = useState(''); // téléphone (client de passage)
+
+  // Client enregistré sélectionné dans le formulaire (ses coordonnées sont reprises automatiquement).
+  const selectedClient = clientId ? clients.find((c) => String(c.id) === clientId) : undefined;
 
   // Frais de livraison proposés (Ar).
   const DELIVERY_FEES = [3000, 4000, 5000, 6000, 7000, 8000];
@@ -76,6 +83,8 @@ export default function OrdersManager({
 
   // Total de l'addition = somme dynamique de toutes les lignes (plats + boissons)
   const computedTotal = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+  // Total à payer TTC = plats + frais de livraison (même calcul que le serveur).
+  const grandTotal = computedTotal + (orderType === 'a_livrer' ? Number(deliveryFee) || 0 : 0);
 
   // Ajoute un plat/boisson (incrémente la quantité s'il est déjà présent)
   const addMenuItem = (menuItemId: number) => {
@@ -120,9 +129,11 @@ export default function OrdersManager({
   };
 
   // Ventilation TVA à partir d'un total TTC (les prix du menu sont saisis TTC).
+  // Base = total TTC complet (plats + frais de livraison). HT arrondi à l'Ariary, TVA = TTC − HT,
+  // pour que HT + TVA retombe toujours exactement sur le TTC imprimé.
   const taxBreakdown = (ttc: number, rate: number) => {
     const r = Number(rate) || 0;
-    const ht = r > 0 ? ttc / (1 + r / 100) : ttc;
+    const ht = r > 0 ? Math.round(ttc / (1 + r / 100)) : ttc;
     return { ht, tva: ttc - ht };
   };
 
@@ -168,9 +179,11 @@ export default function OrdersManager({
     setPaymentMethod('especes');
     setServerName('');
     setOrderType('sur_place');
-    setTaxRate(0);
+    setTaxRate(defaultTaxRate); // TVA par défaut (Paramètres)
     setClientId('');
     setDeliveryFee(0);
+    setDeliveryAddress('');
+    setDeliveryPhone('');
     setIsOpen(true);
   };
 
@@ -193,6 +206,8 @@ export default function OrdersManager({
     setTaxRate(order.taxRate || 0);
     setClientId(order.clientId != null ? String(order.clientId) : '');
     setDeliveryFee(order.deliveryFee || 0);
+    setDeliveryAddress(order.deliveryAddress || '');
+    setDeliveryPhone(order.deliveryPhone || '');
     setIsOpen(true);
   };
 
@@ -214,6 +229,15 @@ export default function OrdersManager({
       alert('Saisissez un numéro de table (1 ou plus).');
       return;
     }
+    // Coordonnées de livraison : saisies pour un client de passage ; pour un client enregistré,
+    // reprises de sa fiche (on ne garde une saisie que si la fiche ne contient pas l'information).
+    const isDelivery = orderType === 'a_livrer';
+    const addr = isDelivery && !selectedClient?.address ? deliveryAddress.trim() : '';
+    const tel = isDelivery && !selectedClient?.phone ? deliveryPhone.trim() : '';
+    if (isDelivery && !selectedClient && (!addr || !tel)) {
+      alert("Commande à livrer : renseignez l'adresse et le numéro de téléphone du client de passage.");
+      return;
+    }
     // On envoie les lignes ; le total est recalculé côté serveur à partir de celles-ci.
     const payload = {
       tableNumber: tableNum,
@@ -224,6 +248,8 @@ export default function OrdersManager({
       taxRate,
       clientId: clientId ? Number(clientId) : null,
       deliveryFee: orderType === 'a_livrer' ? Number(deliveryFee) || 0 : 0,
+      deliveryAddress: addr || null,
+      deliveryPhone: tel || null,
       items: items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, unitPrice: i.unitPrice })),
     };
     if (editingOrder) {
@@ -285,11 +311,30 @@ export default function OrdersManager({
       restaurantStat ? `STAT : ${esc(restaurantStat)}` : '',
     ].filter(Boolean);
     const infoHtml = infoLines.length ? `<div class="info">${infoLines.join('<br/>')}</div>` : '';
+    // Bloc client : client enregistré → sa fiche (nom, tél., adresse) ; client de passage → saisie de la commande.
+    const cli = order.clientId != null ? clients.find((c) => c.id === order.clientId) : undefined;
+    const isDelivery = order.orderType === 'a_livrer';
+    const cliName = cli?.name || '';
+    const cliPhone = cli?.phone || order.deliveryPhone || '';
+    const cliAddr = isDelivery ? (cli?.address || order.deliveryAddress || '') : '';
+    const clientRows = [
+      cliName ? `<tr><td class="l">Client</td><td class="r">${esc(cliName)}</td></tr>` : '',
+      cliPhone ? `<tr><td class="l">Tél.</td><td class="r">${esc(cliPhone)}</td></tr>` : '',
+      cliAddr ? `<tr><td class="l" colspan="2">Adresse : ${esc(cliAddr)}</td></tr>` : '',
+    ].filter(Boolean).join('');
+    const clientHtml = clientRows
+      ? `<hr/><div class="sub" style="margin:4px 0">${isDelivery ? 'LIVRAISON' : 'CLIENT'}</div><table>${clientRows}</table>`
+      : '';
+    const fee = isDelivery ? Number(order.deliveryFee) || 0 : 0;
+    // Prix TTC par plat ; si une TVA s'applique, on indique la TVA incluse sous chaque ligne.
+    const rate = Number(order.taxRate) || 0;
+    const tvaNote = (ttc: number) =>
+      rate > 0 ? `<tr class="tva"><td class="l" colspan="2">&nbsp;&nbsp;dont TVA ${rate}% : ${formatAr(taxBreakdown(ttc, rate).tva)}</td></tr>` : '';
     const rows = (order.items || []).map((it) => `
       <tr>
         <td class="l">${it.quantity}× ${(it.name || 'Article').replace(/</g, '&lt;')}</td>
         <td class="r">${formatAr(it.unitPrice * it.quantity)}</td>
-      </tr>`).join('') || '<tr><td colspan="2">Aucun article</td></tr>';
+      </tr>${tvaNote(it.unitPrice * it.quantity)}`).join('') || '<tr><td colspan="2">Aucun article</td></tr>';
 
     win.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8">
       <title>Addition — Table ${order.tableNumber}</title>
@@ -327,6 +372,7 @@ export default function OrdersManager({
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         td { padding: 2px 0; vertical-align: top; }
         td.r { text-align: right; white-space: nowrap; padding-left: 8px; }
+        tr.tva td { font-size: 0.85em; padding-top: 0; color: #333; }
         .total td { font-size: 15px; font-weight: bold; padding-top: 4px; }
         .foot { text-align: center; font-size: 11px; margin-top: 14px; }
       </style></head><body>
@@ -341,10 +387,14 @@ export default function OrdersManager({
         <tr><td class="l">Serveur</td><td class="r">${(order.serverName || '—').replace(/</g, '&lt;')}</td></tr>
         <tr><td class="l">Date</td><td class="r">${dateStr}</td></tr>
       </table>
+      ${clientHtml}
       <hr/>
       <table>${rows}</table>
       <hr/>
       <table>
+        ${fee > 0 ? `
+        <tr><td class="l">Sous-total plats</td><td class="r">${formatAr(order.totalAmount - fee)}</td></tr>
+        <tr><td class="l">Frais de livraison</td><td class="r">${formatAr(fee)}</td></tr>${tvaNote(fee)}` : ''}
         ${order.taxRate > 0 ? `
         <tr><td class="l">Total HT</td><td class="r">${formatAr(taxBreakdown(order.totalAmount, order.taxRate).ht)}</td></tr>
         <tr><td class="l">TVA (${order.taxRate}%)</td><td class="r">${formatAr(taxBreakdown(order.totalAmount, order.taxRate).tva)}</td></tr>` : ''}
@@ -486,6 +536,17 @@ export default function OrdersManager({
                         }`}>
                           {order.orderType === 'a_livrer' ? '🚚 À livrer' : '🍽️ Sur place'}
                         </span>
+                        {order.orderType === 'a_livrer' && (() => {
+                          const c = order.clientId != null ? clients.find((x) => x.id === order.clientId) : undefined;
+                          const addr = c?.address || order.deliveryAddress;
+                          const tel = c?.phone || order.deliveryPhone;
+                          return (addr || tel) ? (
+                            <div className="mt-1 text-[10px] text-blue-700 space-y-0.5">
+                              {addr && <p className="truncate" title={addr}>📍 {addr}</p>}
+                              {tel && <p className="truncate">📞 {tel}</p>}
+                            </div>
+                          ) : null;
+                        })()}
 
                         {order.items && order.items.length > 0 && (
                           <div className="mt-3 space-y-0.5 max-h-24 overflow-y-auto pr-0.5">
@@ -745,7 +806,9 @@ export default function OrdersManager({
                       <div key={it.menuItemId} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-slate-800 truncate">{it.name}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">{formatAr(it.unitPrice)} / unité</p>
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            {formatAr(it.unitPrice)} / unité{taxRate > 0 ? ` · dont TVA ${formatAr(taxBreakdown(it.unitPrice * it.quantity, taxRate).tva)}` : ''}
+                          </p>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button
@@ -793,7 +856,7 @@ export default function OrdersManager({
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">TVA applicable (%)</label>
                 <div className="flex flex-wrap gap-2">
-                  {[0, 5, 20].map((r) => (
+                  {[0, 20].map((r) => (
                     <button
                       key={r}
                       type="button"
@@ -836,23 +899,44 @@ export default function OrdersManager({
                       <option key={f} value={f}>{formatAr(f)}</option>
                     ))}
                   </select>
+
+                  {/* Coordonnées du client à livrer (imprimées sur la facture) */}
+                  <label className="block text-[11px] font-semibold text-blue-700 uppercase tracking-wider mt-3 mb-1.5">
+                    📍 Coordonnées de livraison
+                  </label>
+                  {selectedClient && (
+                    <div className="mb-2 px-3 py-2 bg-white border border-emerald-200 rounded-xl text-[11px] text-slate-700 space-y-0.5">
+                      <p className="font-bold text-emerald-700">⭐ {selectedClient.name} (client enregistré)</p>
+                      {selectedClient.phone && <p>📞 {selectedClient.phone}</p>}
+                      {selectedClient.address && <p>📍 {selectedClient.address}</p>}
+                      <p className="text-[9px] text-slate-400">Repris automatiquement de la fiche client sur la facture.</p>
+                    </div>
+                  )}
+                  {(!selectedClient || !selectedClient.address) && (
+                    <input
+                      type="text"
+                      required={!selectedClient}
+                      value={deliveryAddress}
+                      onChange={(e) => setDeliveryAddress(e.target.value)}
+                      className="w-full mb-2 px-3.5 py-2 bg-white border border-blue-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 outline-none text-slate-800 placeholder:text-slate-400"
+                      placeholder={selectedClient ? 'Adresse (absente de la fiche client)' : 'Adresse de livraison *'}
+                    />
+                  )}
+                  {(!selectedClient || !selectedClient.phone) && (
+                    <input
+                      type="tel"
+                      required={!selectedClient}
+                      value={deliveryPhone}
+                      onChange={(e) => setDeliveryPhone(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-blue-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 outline-none text-slate-800 placeholder:text-slate-400 font-mono"
+                      placeholder={selectedClient ? 'Téléphone (absent de la fiche client)' : 'Numéro de téléphone *'}
+                    />
+                  )}
                 </div>
               )}
 
               {/* Total dynamique de l'addition */}
               <div className="bg-red-50/60 border border-red-100 rounded-2xl px-4 py-3 space-y-1.5">
-                {taxRate > 0 && (
-                  <>
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                      <span>Total HT</span>
-                      <span className="font-mono">{formatAr(taxBreakdown(computedTotal, taxRate).ht)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-                      <span>TVA ({taxRate} %)</span>
-                      <span className="font-mono">{formatAr(taxBreakdown(computedTotal, taxRate).tva)}</span>
-                    </div>
-                  </>
-                )}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
                   <span>Addition (plats {taxRate > 0 ? 'TTC' : ''})</span>
                   <span className="font-mono">{formatAr(computedTotal)}</span>
@@ -863,12 +947,25 @@ export default function OrdersManager({
                     <span className="font-mono">{formatAr(Number(deliveryFee))}</span>
                   </div>
                 )}
+                {/* Ventilation TVA sur le total à payer (plats + livraison), identique à la facture */}
+                {taxRate > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                      <span>Total HT</span>
+                      <span className="font-mono">{formatAr(taxBreakdown(grandTotal, taxRate).ht)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                      <span>TVA ({taxRate} %)</span>
+                      <span className="font-mono">{formatAr(taxBreakdown(grandTotal, taxRate).tva)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex items-center justify-between pt-1 border-t border-red-100">
                   <div className="flex flex-col">
                     <span className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Total à payer</span>
                     <span className="text-[9px] text-slate-400 font-semibold">{items.reduce((n, i) => n + i.quantity, 0)} article(s){orderType === 'a_livrer' && Number(deliveryFee) > 0 ? ' + livraison' : ''}</span>
                   </div>
-                  <span className="text-lg font-black text-red-600 font-mono">{formatAr(computedTotal + (orderType === 'a_livrer' ? Number(deliveryFee) || 0 : 0))}</span>
+                  <span className="text-lg font-black text-red-600 font-mono">{formatAr(grandTotal)}</span>
                 </div>
               </div>
 
